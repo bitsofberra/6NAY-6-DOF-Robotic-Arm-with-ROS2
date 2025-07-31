@@ -1,0 +1,7 @@
+two_dof_position_publisher:
+  ros__parameters:
+    publish_topic: "/position_commands"
+    wait_sec_between_publish: 3
+    goal_names: ["home", "goal"]
+    home: [0.0, 0.0]
+    goal: [1.0, 0.5]
