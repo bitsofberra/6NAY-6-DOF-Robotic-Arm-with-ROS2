@@ -21,12 +21,12 @@ def generate_launch_description():
                 'robot_description': Command(['xacro ', urdf_file])
             }]
         ),
-       # Node(
-        #    package='joint_state_publisher_gui',
-         #   executable='joint_state_publisher_gui',
-          #  name='joint_state_publisher_gui',
-           # output='screen',
-        #),
+        Node(
+            package='joint_state_publisher_gui',
+            executable='joint_state_publisher_gui',
+            name='joint_state_publisher_gui',
+            output='screen',
+        ),
 
          #Node(
           #  package='two_dof_robot',
@@ -35,10 +35,24 @@ def generate_launch_description():
             #output='screen',
         #),
 
+        #Node(
+         #   package='two_dof_robot',
+          #  executable='trajectory_to_target',  # Python dosyanızın adı
+           # name='trajectory_to_target',
+            #output='screen',
+        #),
+
         Node(
             package='two_dof_robot',
-            executable='trajectory_to_target',  # Python dosyanızın adı
-            name='trajectory_to_target',
+            executable='interactive_marker_target',  # Python dosyanızın adı
+            name='interactive_marker_target',
+            output='screen',
+        ),
+        
+        Node(
+            package='two_dof_robot',
+            executable='target_follower',
+            name='target_follower',
             output='screen',
         ),
 
@@ -47,5 +61,13 @@ def generate_launch_description():
             executable='rviz2',
             name='rviz2',
             output='screen',
-        )
+        ),
+
+         #🎯 Tkinter GUI ile manuel hedef giriş arayüzü
+        Node(
+            package='two_dof_robot',
+            executable='target_gui',
+            name='target_gui',
+            output='screen',
+        ),
     ])
