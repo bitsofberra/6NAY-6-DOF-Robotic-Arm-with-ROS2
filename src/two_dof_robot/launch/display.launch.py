@@ -64,10 +64,10 @@ def generate_launch_description():
         ),
 
          #🎯 Tkinter GUI ile manuel hedef giriş arayüzü
-        Node(
-            package='two_dof_robot',
-            executable='target_gui',
-            name='target_gui',
-            output='screen',
-        ),
+        #Node(
+        #    package='two_dof_robot',
+         #   executable='target_gui',
+          #  name='target_gui',
+           # output='screen',
+       # ),
     ])
