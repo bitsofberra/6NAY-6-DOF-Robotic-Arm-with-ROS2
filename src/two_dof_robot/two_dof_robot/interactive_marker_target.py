@@ -1,73 +1,96 @@
-# import rclpy
-# from rclpy.node import Node
-# from geometry_msgs.msg import PoseStamped
-# from visualization_msgs.msg import InteractiveMarker, InteractiveMarkerControl, Marker
-# from interactive_markers.interactive_marker_server import InteractiveMarkerServer
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+from geometry_msgs.msg import PoseStamped
+from std_msgs.msg import Header
+import math
 
-# class TargetSetter(Node):
-#     def __init__(self):
-#         super().__init__('interactive_marker_target')
+class TargetFollower(Node):
+    def __init__(self):
+        super().__init__('target_follower')
+        self.publisher_ = self.create_publisher(JointState, '/joint_states', 10)
+        self.subscription = self.create_subscription(PoseStamped, '/target_pose', self.pose_callback, 10)
+        self.timer = self.create_timer(0.05, self.update_trajectory)
 
-#         self.publisher_ = self.create_publisher(PoseStamped, '/target_pose', 10)
-#         self.server = InteractiveMarkerServer(self, "target_marker")
+        self.l1 = 1.0
+        self.l2 = 1.0
 
-#         # Interactive Marker
-#         int_marker = InteractiveMarker()
-#         int_marker.header.frame_id = "base"
-#         int_marker.name = "target"
-#         int_marker.description = "Move me in Z-Y plane"
-#         int_marker.scale = 0.3
-#         int_marker.pose.position.y = 0.5
-#         int_marker.pose.position.z = 0.5
+        self.current_q = [0.0, 0.0]
+        self.target_q = None
+        self.q0 = [0.0, 0.0]
+        self.qf = [0.0, 0.0]
 
-#         # Z-Y düzleminde sürüklenebilir kontrol
-#         control = InteractiveMarkerControl()
-#         control.name = "move_zy"
-#         control.interaction_mode = InteractiveMarkerControl.MOVE_PLANE
-#         control.orientation.w = 1.0
-#         control.orientation.x = 1.0  # X'e dik → Z-Y düzlemi
-#         control.orientation.y = 0.0
-#         control.orientation.z = 0.0
-#         control.always_visible = True
+        self.t = 0.0
+        self.T = 3.0
 
-#         # Görsel Marker
-#         marker = Marker()
-#         marker.type = Marker.SPHERE
-#         marker.scale.x = 0.05
-#         marker.scale.y = 0.05
-#         marker.scale.z = 0.05
-#         marker.color.r = 1.0
-#         marker.color.g = 0.0
-#         marker.color.b = 0.0
-#         marker.color.a = 1.0
-#         control.markers.append(marker)
+    def pose_callback(self, msg):
+        x = msg.pose.position.x
+        y = msg.pose.position.y
+        z = msg.pose.position.z
 
-#         int_marker.controls.append(control)
+        # Dönüşüm: Kartezyen (x, y, z) → Z-Y düzlemine projeksiyon
+        r_proj = math.sqrt(y**2 + z**2)
+        if r_proj > self.l1 + self.l2:
+            self.get_logger().warn("❌ Target out of reach in Z-Y projection.")
+            return
 
-#         # Doğru kullanım — ayrı ayrı çağır
-#         self.server.insert(int_marker)
-#         self.server.setCallback(int_marker.name, self.process_feedback)
-#         self.server.applyChanges()
+        try:
+            q1, q2 = self.inverse_kinematics(y, z)
+            self.q0 = self.current_q
+            self.qf = [q1, q2]
+            self.target_q = self.qf
+            self.t = 0.0
+            self.get_logger().info(f"🎯 Target: y={y:.2f}, z={z:.2f} → q1={math.degrees(q1):.1f}°, q2={math.degrees(q2):.1f}°")
+        except ValueError:
+            self.get_logger().warn("❌ IK failed.")
 
-#     def process_feedback(self, feedback):
-#         msg = PoseStamped()
-#         msg.header = feedback.header
-#         msg.pose = feedback.pose
-#         self.publisher_.publish(msg)
+    def inverse_kinematics(self, y, z):
+        l1, l2 = self.l1, self.l2
+        d = math.hypot(y, z)
 
-#         y = msg.pose.position.y
-#         z = msg.pose.position.z
-#         self.get_logger().info(f"📍 New Z-Y target: y={y:.2f}, z={z:.2f}")
+        cos_q2 = (d**2 - l1**2 - l2**2) / (2 * l1 * l2)
+        if abs(cos_q2) > 1.0:
+            raise ValueError("Unreachable")
 
-# def main(args=None):
-#     rclpy.init(args=args)
-#     node = TargetSetter()
-#     try:
-#         rclpy.spin(node)
-#     except KeyboardInterrupt:
-#         pass
-#     node.destroy_node()
-#     rclpy.shutdown()
+        q2 = math.acos(cos_q2)
+        k1 = l1 + l2 * math.cos(q2)
+        k2 = l2 * math.sin(q2)
+        q1 = math.atan2(z, y) - math.atan2(k2, k1)
+        return q1, q2
 
-# if __name__ == '__main__':
-#     main()
+    def s_curve(self, t, T, q0, qf):
+        tau = min(max(t / T, 0.0), 1.0)
+        s = 10 * tau**3 - 15 * tau**4 + 6 * tau**5
+        return q0 + (qf - q0) * s
+
+    def update_trajectory(self):
+        if self.target_q is None:
+            return
+
+        self.t += 0.05
+        if self.t > self.T:
+            self.current_q = self.qf
+            return
+
+        q1 = self.s_curve(self.t, self.T, self.q0[0], self.qf[0])
+        q2 = self.s_curve(self.t, self.T, self.q0[1], self.qf[1])
+
+        msg = JointState()
+        msg.header = Header()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.name = ['joint1', 'joint2']
+        msg.position = [q1, q2]
+        self.publisher_.publish(msg)
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = TargetFollower()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
