@@ -1,16 +1,11 @@
 #include <memory>
 
-#include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/string.hpp"
-
-class yilmaz : public rclcpp::Node
-{
+#include "cpp_pubsub/yilmaz_subscriber.hpp"
 
 
-public:
 
-    yilmaz()
-    :Node("andromeda")
+
+   yilmaz::yilmaz() : Node("andromeda")
 
     {
         auto topic_callback =
@@ -24,15 +19,12 @@ public:
         };
 
         subscription_ =
-            this->create_subscription<std_msgs::msg::String>("topic", 40, topic_callback);
+            this->create_subscription<std_msgs::msg::String>("berra_topic", 40, topic_callback);
 
-    };
+    }
 
-    
-private:
-    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_;
 
-};
+
 
 int main(int argc, char * argv[])
 {
