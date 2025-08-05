@@ -11,12 +11,12 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 
 # Executable: talker
-add_executable(talker src/publisher_lambda_function.cpp)
-ament_target_dependencies(talker rclcpp std_msgs)
+#add_executable(talker src/publisher_lambda_function.cpp)
+#ament_target_dependencies(talker rclcpp std_msgs)
 
 # Executable: listener
-add_executable(listener src/subscriber_lambda_function.cpp)
-ament_target_dependencies(listener rclcpp std_msgs)
+#add_executable(listener src/subscriber_lambda_function.cpp)
+#ament_target_dependencies(listener rclcpp std_msgs)
 
 add_executable(yilmaz src/yilmaz_subscriber.cpp)
 
@@ -36,6 +36,29 @@ target_include_directories(berra PUBLIC
 )
 
 ament_target_dependencies(berra rclcpp std_msgs)
+
+
+
+
+find_package(rosidl_default_generators REQUIRED)
+
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(tutorial_interfaces REQUIRED)                         # CHANGE
+
+add_executable(talker src/publisher_member_function.cpp)
+ament_target_dependencies(talker rclcpp tutorial_interfaces)         # CHANGE
+
+add_executable(listener src/subscriber_member_function.cpp)
+ament_target_dependencies(listener rclcpp tutorial_interfaces)     # CHANGE
+
+
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/Num.msg"
+ )
+
+
 
 # Install executables
 install(TARGETS
