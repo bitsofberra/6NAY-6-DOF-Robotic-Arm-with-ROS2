@@ -1,0 +1,33 @@
+[0.007s] Invoking command in '/home/yilmaz/ros2_ws/build/cpp_pubsub': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/yilmaz/ros2_ws/build/cpp_pubsub -- -j16 -l16
+[0.024s] -- Found ament_cmake: 2.5.4 (/opt/ros/jazzy/share/ament_cmake/cmake)
+[0.159s] -- Found rclcpp: 28.1.10 (/opt/ros/jazzy/share/rclcpp/cmake)
+[0.176s] -- Found rosidl_generator_c: 4.6.5 (/opt/ros/jazzy/share/rosidl_generator_c/cmake)
+[0.181s] -- Found rosidl_generator_cpp: 4.6.5 (/opt/ros/jazzy/share/rosidl_generator_cpp/cmake)
+[0.189s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[0.197s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[0.238s] -- Found rmw_implementation_cmake: 7.3.2 (/opt/ros/jazzy/share/rmw_implementation_cmake/cmake)
+[0.239s] -- Found rmw_fastrtps_cpp: 8.4.2 (/opt/ros/jazzy/share/rmw_fastrtps_cpp/cmake)
+[0.279s] -- Using RMW implementation 'rmw_fastrtps_cpp' as default
+[0.322s] -- Found std_msgs: 5.3.6 (/opt/ros/jazzy/share/std_msgs/cmake)
+[0.333s] -- Found ament_lint_auto: 0.17.2 (/opt/ros/jazzy/share/ament_lint_auto/cmake)
+[0.393s] -- Added test 'cppcheck' to perform static code analysis on C / C++ code
+[0.393s] -- Configured cppcheck include dirs: 
+[0.393s] -- Configured cppcheck exclude dirs and/or files: 
+[0.393s] -- Added test 'lint_cmake' to check CMake code style
+[0.394s] -- Added test 'uncrustify' to check C / C++ code style
+[0.394s] -- Configured uncrustify additional arguments: 
+[0.394s] -- Added test 'xmllint' to check XML markup files
+[0.395s] -- Configuring done (0.4s)
+[0.405s] -- Generating done (0.0s)
+[0.408s] -- Build files have been written to: /home/yilmaz/ros2_ws/build/cpp_pubsub
+[0.432s] [ 16%] [32mBuilding CXX object CMakeFiles/yilmaz.dir/src/yilmaz_subscriber.cpp.o[0m
+[0.437s] [ 83%] Built target talker
+[0.437s] [ 83%] Built target listener
+[0.464s] [01m[K/home/yilmaz/ros2_ws/src/cpp_pubsub/src/yilmaz_subscriber.cpp:3:10:[m[K [01;31m[Kfatal error: [m[Krclpp/rclcpp.hpp: No such file or directory
+[0.464s]     3 | #include [01;31m[K"rclpp/rclcpp.hpp"[m[K
+[0.465s]       |          [01;31m[K^~~~~~~~~~~~~~~~~~[m[K
+[0.465s] compilation terminated.
+[0.465s] gmake[2]: *** [CMakeFiles/yilmaz.dir/build.make:76: CMakeFiles/yilmaz.dir/src/yilmaz_subscriber.cpp.o] Error 1
+[0.466s] gmake[1]: *** [CMakeFiles/Makefile2:193: CMakeFiles/yilmaz.dir/all] Error 2
+[0.466s] gmake: *** [Makefile:146: all] Error 2
+[0.468s] Invoked command in '/home/yilmaz/ros2_ws/build/cpp_pubsub' returned '2': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/yilmaz/ros2_ws/build/cpp_pubsub -- -j16 -l16

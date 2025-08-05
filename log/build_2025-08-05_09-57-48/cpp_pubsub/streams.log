@@ -1,0 +1,27 @@
+[0.010s] Invoking command in '/home/yilmaz/ros2_ws/build/cpp_pubsub': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/yilmaz/ros2_ws/build/cpp_pubsub -- -j16 -l16
+[0.044s] [ 33%] Built target talker
+[0.044s] [ 66%] Built target listener
+[0.045s] [ 83%] [32mBuilding CXX object CMakeFiles/yilmaz.dir/src/yilmaz_subscriber.cpp.o[0m
+[5.030s] [100%] [32m[1mLinking CXX executable yilmaz[0m
+[5.198s] [100%] Built target yilmaz
+[5.206s] Invoked command in '/home/yilmaz/ros2_ws/build/cpp_pubsub' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/yilmaz/ros2_ws/build/cpp_pubsub -- -j16 -l16
+[5.213s] Invoking command in '/home/yilmaz/ros2_ws/build/cpp_pubsub': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/yilmaz/ros2_ws/build/cpp_pubsub
+[5.218s] -- Install configuration: ""
+[5.218s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/lib/cpp_pubsub/talker
+[5.218s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/lib/cpp_pubsub/listener
+[5.218s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/ament_index/resource_index/package_run_dependencies/cpp_pubsub
+[5.218s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/ament_index/resource_index/parent_prefix_path/cpp_pubsub
+[5.218s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/cpp_pubsub/environment/ament_prefix_path.sh
+[5.218s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/cpp_pubsub/environment/ament_prefix_path.dsv
+[5.218s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/cpp_pubsub/environment/path.sh
+[5.218s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/cpp_pubsub/environment/path.dsv
+[5.218s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/cpp_pubsub/local_setup.bash
+[5.219s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/cpp_pubsub/local_setup.sh
+[5.219s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/cpp_pubsub/local_setup.zsh
+[5.219s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/cpp_pubsub/local_setup.dsv
+[5.219s] -- Installing: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/cpp_pubsub/package.dsv
+[5.219s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/ament_index/resource_index/packages/cpp_pubsub
+[5.219s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/cpp_pubsub/cmake/cpp_pubsubConfig.cmake
+[5.219s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/cpp_pubsub/cmake/cpp_pubsubConfig-version.cmake
+[5.219s] -- Up-to-date: /home/yilmaz/ros2_ws/install/cpp_pubsub/share/cpp_pubsub/package.xml
+[5.221s] Invoked command in '/home/yilmaz/ros2_ws/build/cpp_pubsub' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/yilmaz/ros2_ws/build/cpp_pubsub

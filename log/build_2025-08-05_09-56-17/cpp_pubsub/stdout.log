@@ -1,0 +1,3 @@
+[ 16%] [32mBuilding CXX object CMakeFiles/yilmaz.dir/src/yilmaz_subscriber.cpp.o[0m
+[ 50%] Built target talker
+[ 83%] Built target listener
