@@ -24,7 +24,7 @@ public:
         };
 
         subscription_ =
-            this->create_subscription<std_msgs::msg::String>("topic", 40, topic_callback);
+            this->create_subscription<std_msgs::msg::String>("berra_topic", 40, topic_callback);
 
     };
 

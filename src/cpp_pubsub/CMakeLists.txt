@@ -14,9 +14,11 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 
+include_directories(include)
+
 add_executable(talker src/berra_publisher.cpp)
 ament_target_dependencies(talker rclcpp std_msgs)
-add_executable(listener src/subscriber_lambda_function.cpp)
+add_executable(listener src/yilmaz_subscriber.cpp)
 ament_target_dependencies(listener rclcpp std_msgs)
 
 install(TARGETS

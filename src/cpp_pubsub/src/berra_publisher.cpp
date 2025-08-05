@@ -4,7 +4,6 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
-#include "cpp_pubsub/berra_publisher.hpp"
 
 using namespace std::chrono_literals;
 
@@ -30,8 +29,8 @@ private:
         publisher_->publish(msg);
     }
 
-    rclcpp::TimerBase::SharedPtr timer_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
+    rclcpp::TimerBase::SharedPtr timer_;
     size_t count_;
 };
 
