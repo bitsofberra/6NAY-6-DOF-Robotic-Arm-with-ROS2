@@ -7,14 +7,23 @@
   <maintainer email="metesumeyyeberra@gmail.com">bitsofberra</maintainer>
   <license>Apache-2.0</license>
 
+  <!-- Derleme aracı -->
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <!-- Gerekli bağımlılıklar -->
   <depend>rclcpp</depend>
-  <depend>example_interfaces</depend>
+  
+  <!-- Eğer tutorial_interfaces yerine kendi srv'n varsa bunu kaldır -->
+  <!-- <depend>tutorial_interfaces</depend> -->
 
+  <!-- Eğer kendi srv dosyan varsa bu üç satırı ekle -->
+  <build_depend>rosidl_default_generators</build_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <!-- Testler -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
-  <depend>tutorial_interfaces</depend>
 
   <export>
     <build_type>ament_cmake</build_type>
