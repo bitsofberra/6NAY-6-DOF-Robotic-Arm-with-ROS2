@@ -1,22 +1,31 @@
 cmake_minimum_required(VERSION 3.5)
 project(cpp_srvcli)
 
-
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(tutorial_interfaces REQUIRED)        # CHANGE
+find_package(geometry_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
-add_executable(server src/add_two_ints_server.cpp)
-ament_target_dependencies(server
-  rclcpp tutorial_interfaces)                      #CHANGE
+# Arayüz (srv) dosyasını tanımlıyoruz
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "srv/Server.srv"
+  DEPENDENCIES geometry_msgs
+)
 
-add_executable(client src/add_two_ints_client.cpp)
-ament_target_dependencies(client
-  rclcpp tutorial_interfaces)                      #CHANGE
+# İSTEMCİYİ DERLE
+add_executable(yilmaz_client src/yilmaz_client.cpp)
+ament_target_dependencies(yilmaz_client rclcpp geometry_msgs)
+
+# Eski komut:
+# rosidl_target_interfaces(yilmaz_client ${PROJECT_NAME} "rosidl_typesupport_cpp")
+
+# Yeni komutlar:
+rosidl_get_typesupport_target(cpp_typesupport_target "${PROJECT_NAME}" "rosidl_typesupport_cpp")
+target_link_libraries(yilmaz_client "${cpp_typesupport_target}")
 
 install(TARGETS
-  server
-  client
-  DESTINATION lib/${PROJECT_NAME})
+  yilmaz_client
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 ament_package()
