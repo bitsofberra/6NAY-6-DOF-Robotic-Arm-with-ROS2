@@ -1,7 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <cmath>
-#include <nlohmann/json.hpp>  // JSON kütüphanesi
+#include "json.hpp" // JSON kütüphanesi
 
 using json = nlohmann::json;
 

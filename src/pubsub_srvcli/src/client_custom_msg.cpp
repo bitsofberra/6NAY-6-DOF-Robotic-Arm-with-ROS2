@@ -1,19 +1,34 @@
-#include "rclcpp/rclcpp.hpp"
-#include "pubsub_srvcli/srv/vector_distance.hpp"  
-
 #include <memory>
-#include <cstdlib>  
+#include <cstdlib> 
+#include <fstream>
+#include <cmath>
+#include "pubsub_srvcli/json.hpp"
+#include "rclcpp/rclcpp.hpp"
+#include "pubsub_srvcli/srv/vector_distance.hpp" 
+
 
 using namespace std::chrono_literals;
+using json = nlohmann::json;
 
-int main(int argc, char **argv)
+int main()
 {
+
+   std::ifstream data("/home/yilmaz/ros2_ws/src/pubsub_srvcli/src/veri.json");
+
+    if (!data.is_open()) {
+        std::cerr << "veri.json dosyası bulunamadı." << std::endl;
+        return 1;
+    }
+    json j;
+    data >> j;
+
+
+
+    int argc = 0;
+    char **argv = nullptr;
     rclcpp::init(argc, argv);
 
-    if (argc != 4) {
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Please enter 3 float value.");
-        return 1;  }
-
+    
     auto node = rclcpp::Node::make_shared("custom_client");
 
     auto client = node->create_client<pubsub_srvcli::srv::VectorDistance>("VectorDistance");
@@ -21,9 +36,12 @@ int main(int argc, char **argv)
     
     auto request = std::make_shared<pubsub_srvcli::srv::VectorDistance::Request>();
 
-    request->x = std::atof(argv[1]);
-    request->y = std::atof(argv[2]);
-    request->z = std::atof(argv[3]);
+   
+
+
+    request->x = (j["x"]);
+    request->y = (j["y"]);
+    request->z = (j["z"]);
 
     while (!client->wait_for_service(5s)) {
         if (!rclcpp::ok()) {

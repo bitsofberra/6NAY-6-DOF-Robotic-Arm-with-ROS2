@@ -58,3 +58,4 @@ qtcreator-*
 # Catkin custom files
 CATKIN_IGNORE
 >>>>>>> 096d5c75e7d4553fdbc4bdf2d304c0fca1af692e
+src/exe
