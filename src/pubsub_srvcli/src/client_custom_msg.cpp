@@ -3,7 +3,7 @@
 #include <fstream>
 #include <cmath>
 #include <deque>
-#include "pubsub_srvcli/json.hpp"
+#include <nlohmann/json.hpp>
 #include "rclcpp/rclcpp.hpp"
 #include "pubsub_srvcli/srv/vector_distance.hpp" 
 
@@ -40,18 +40,10 @@ int main()
     auto request = std::make_shared<pubsub_srvcli::srv::VectorDistance::Request>();
 
     char c = 'q' ;
-    char q;
+    char q = 'a';
+    int i=0;
 
-    for (const auto& item : j)
-    {
-      positions.push_front({item["x"].get<double>(), item["y"].get<double>(), item["z"].get<double>()});  
-        
-        request->x = (positions[0].x);
-        request->y = (positions[0].y);
-        request->z = (positions[0].z);
 
-    }
-    
     while (!client->wait_for_service(3s)) {
         if (!rclcpp::ok()) {
             RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Data is not recieved.");
@@ -60,10 +52,45 @@ int main()
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Try again later.");
     }
 
-    int i=0;
+
+    for (const auto& item : j)
+    {
+        
+      positions.push_front({item["x"].get<double>(), item["y"].get<double>(), item["z"].get<double>()});  
+        
+        request->x = (positions[i].x);
+        request->y = (positions[i].y);
+        request->z = (positions[i].z);
+
+        auto result_future = client->async_send_request(request);
+
+    if (rclcpp::spin_until_future_complete(node, result_future) == rclcpp::FutureReturnCode::SUCCESS) {
+
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Distance: %f", result_future.get()->distance);
+    } else {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Not found: VectorDistance");
+    }
+
+        
+    }
+    
+  
 
     while (c!=q)
     {
+    
+    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "\n devam etmek için bir tuşa bas.\n çıkmak için q ya basın.");
+
+    std::cin >> q ;
+
+    double x_, y_, z_ ;    
+
+    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "3 adet double değeri gir");
+
+    std::cin >> x_ >> y_ >> z_ ;
+
+    positions.push_front({x_, y_, z_});
+
     
     request->x = (positions[i].x);
     request->y = (positions[i].y);
@@ -76,24 +103,7 @@ int main()
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Distance: %f", result_future.get()->distance);
     } else {
         RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Not found: VectorDistance");
-    }
-
-    double x_, y_, z_ ;    
-
-    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "3 adet double değeri gir");
-
-    std::cin >> x_ >> y_ >> z_ ;
-
-    positions.push_front({x_, y_, z_});
-
-    if(i != 0){
-
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "\n devam etmek için bir tuşa bas.\n çıkmak için q ya basın.");
-
-    std::cin >> q ;
-    }
-
-    i+=1;     
+    }  
 
 }
 

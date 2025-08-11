@@ -20,12 +20,11 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES std_msgs
 )
 
-include_directories(include)
-
+include_directories(include /usr/include)
 
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} rosidl_typesupport_cpp)
 
-###############################
+
 # Custom subscriber
 add_executable(custom_subscriber src/subscriber_custom_msg.cpp)
 target_include_directories(custom_subscriber PUBLIC
@@ -54,7 +53,7 @@ target_include_directories(publisher PUBLIC
   $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(publisher rclcpp std_msgs)
 
-#########################################
+
 # Custom server
 add_executable(custom_server src/server_custom_msg.cpp)
 ament_target_dependencies(custom_server rclcpp)
@@ -76,7 +75,7 @@ ament_target_dependencies(client rclcpp)
 target_link_libraries(client ${cpp_typesupport_target})
 
 
-##########################
+
 install(TARGETS
   custom_subscriber
   custom_publisher
@@ -91,7 +90,7 @@ install(TARGETS
 
 
 # Test 
-##########################
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
@@ -99,6 +98,6 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-##########################
+
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()
