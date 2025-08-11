@@ -1,51 +1,112 @@
-
-#include "rclcpp/rclcpp.hpp"
-#include "pubsub_srvcli/srv/vector_distance.hpp"
-
-#include <nlohmann/json.hpp>
-#include <fstream>
 #include <memory>
+#include <cstdlib> 
+#include <fstream>
+#include <cmath>
+#include <deque>
+#include <nlohmann/json.hpp>
+#include "rclcpp/rclcpp.hpp"
+#include "pubsub_srvcli/srv/vector_distance.hpp" 
 
-using json = nlohmann::json;
+
 using namespace std::chrono_literals;
+using json = nlohmann::json;
 
-int main(int , char** )
+
+struct Vec {
+    double x, y, z;
+};
+
+int main()
 {
-  rclcpp::init(0, nullptr);
+   std::ifstream data("/home/yilmaz/ros2_ws/src/pubsub_srvcli/src/veri.json");
 
-  auto node = rclcpp::Node::make_shared("custom_client");
-  auto client = node->create_client<pubsub_srvcli::srv::VectorDistance>("calculate_distance");
+    if (!data.is_open()) {
+        std::cout<< "veri.json dosyası bulunamadı." << std::endl;
+        return 1;
+    }
+    json j;
+    data >> j;
 
-  std::ifstream file("src/pubsub_srvcli/src/data.json");
-  if (!file.is_open()) {
-    RCLCPP_ERROR(node->get_logger(), "data.json dosyası açılamadı!");
-    return 1;
-  }
+    int argc = 0;
+    char **argv = nullptr;
+    rclcpp::init(argc, argv);
 
-  json j;
-  file >> j;
-  file.close();
+    std::deque<Vec> positions;
 
-  auto request = std::make_shared<pubsub_srvcli::srv::VectorDistance::Request>();
-  request->x = j.at("x").get<double>();
-  request->y = j.at("y").get<double>();
-  request->z = j.at("z").get<double>();
+    auto node = rclcpp::Node::make_shared("custom_client");
 
-  if (!client->wait_for_service(5s)) {
-    RCLCPP_ERROR(node->get_logger(), "Servis bulunamadı: calculate_distance");
-    return 1;
-  }
+    auto client = node->create_client<pubsub_srvcli::srv::VectorDistance>("VectorDistance");
 
-  auto result_future = client->async_send_request(request);
-  if (rclcpp::spin_until_future_complete(node, result_future) ==
-      rclcpp::FutureReturnCode::SUCCESS)
-  {
-    double d = result_future.get()->distance;
-    RCLCPP_INFO(node->get_logger(), "Distance: %.2f", d);
-  } else {
-    RCLCPP_ERROR(node->get_logger(), "Servis çağrısı başarısız");
-  }
+    auto request = std::make_shared<pubsub_srvcli::srv::VectorDistance::Request>();
 
-  rclcpp::shutdown();
-  return 0;
+    char c = 'q' ;
+    char q = 'a';
+    int i=0;
+
+
+    while (!client->wait_for_service(3s)) {
+        if (!rclcpp::ok()) {
+            RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Data is not recieved.");
+            return 1;
+        }
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Try again later.");
+    }
+
+
+    for (const auto& item : j)
+    {
+        
+      positions.push_front({item["x"].get<double>(), item["y"].get<double>(), item["z"].get<double>()});  
+        
+        request->x = (positions[i].x);
+        request->y = (positions[i].y);
+        request->z = (positions[i].z);
+
+        auto result_future = client->async_send_request(request);
+
+    if (rclcpp::spin_until_future_complete(node, result_future) == rclcpp::FutureReturnCode::SUCCESS) {
+
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Distance: %f", result_future.get()->distance);
+    } else {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Not found: VectorDistance");
+    }
+
+        
+    }
+    
+  
+
+    while (c!=q)
+    {
+    
+    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "\n devam etmek için bir tuşa bas.\n çıkmak için q ya basın.");
+
+    std::cin >> q ;
+
+    double x_, y_, z_ ;    
+
+    RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "3 adet double değeri gir");
+
+    std::cin >> x_ >> y_ >> z_ ;
+
+    positions.push_front({x_, y_, z_});
+
+    
+    request->x = (positions[i].x);
+    request->y = (positions[i].y);
+    request->z = (positions[i].z);
+
+    auto result_future = client->async_send_request(request);
+
+    if (rclcpp::spin_until_future_complete(node, result_future) == rclcpp::FutureReturnCode::SUCCESS) {
+
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Distance: %f", result_future.get()->distance);
+    } else {
+        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Not found: VectorDistance");
+    }  
+
+}
+
+    rclcpp::shutdown();
+    return 0;
 }

@@ -1,0 +1,2 @@
+#ifndef CLIENT_CUSTOM_MSG_HPP_
+#define CLIENT_CUSTOM_MSG_HPP_
