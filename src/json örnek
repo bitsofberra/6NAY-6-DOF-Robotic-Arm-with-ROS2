@@ -1,0 +1,33 @@
+#include <iostream>
+#include <fstream>
+#include <cmath>
+#include <nlohmann/json.hpp>  // JSON kütüphanesi
+
+using json = nlohmann::json;
+
+int main() {
+    std::ifstream dosya("veri.json");
+    if (!dosya.is_open()) {
+        std::cerr << "veri.json dosyası bulunamadı." << std::endl;
+        return 1;
+    }
+
+    json j;
+    dosya >> j;  // JSON verisini ayrıştır (parse)
+
+    // Verileri al
+    double x = j["x"];
+    double y = j["y"];
+    double z = j["z"];
+
+    // İşlem: Vektör uzunluğunu (mesafe) hesapla
+    double mesafe = std::sqrt(x * x + y * y + z * z);
+
+    // Sonuçları yazdır
+    std::cout << "x: " << x << "\n";
+    std::cout << "y: " << y << "\n";
+    std::cout << "z: " << z << "\n";
+    std::cout << "Mesafe: " << mesafe << "\n";
+
+    return 0;
+}
