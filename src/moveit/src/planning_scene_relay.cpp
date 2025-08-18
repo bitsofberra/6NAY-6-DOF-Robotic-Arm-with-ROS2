@@ -6,10 +6,12 @@ public:
   PlanningSceneRelay() : Node("planning_scene_relay") {
     using moveit_msgs::msg::PlanningScene;
 
+    // MoveGroup → volatile
     rclcpp::QoS in_qos(rclcpp::KeepLast(1));
     in_qos.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
     in_qos.durability(RMW_QOS_POLICY_DURABILITY_VOLATILE);
 
+    // RViz → transient_local (latched)
     rclcpp::QoS out_qos(rclcpp::KeepLast(1));
     out_qos.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
     out_qos.durability(RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL);

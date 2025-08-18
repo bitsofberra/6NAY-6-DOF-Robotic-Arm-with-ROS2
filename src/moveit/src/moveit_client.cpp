@@ -1,86 +1,70 @@
 #include <memory>
-#include <cstdlib>
 #include <fstream>
-#include <cmath>
 #include <deque>
 #include <nlohmann/json.hpp>
+
 #include "rclcpp/rclcpp.hpp"
+#include "geometry_msgs/msg/point.hpp"
 #include "moveit/srv/vector_distance.hpp"
 
-using namespace std::chrono_literals;
 using json = nlohmann::json;
-
-struct Vec { double x, y, z; };
+using namespace std::chrono_literals;
 
 int main(int argc, char** argv)
 {
-  std::ifstream data("/home/yilmaz/ros2_ws/src/moveit/veri.json");
-  if (!data.is_open()) {
-    std::cout << "veri.json dosyası bulunamadı." << std::endl;
-    return 1;
-  }
-  json j;
-  data >> j;
-
   rclcpp::init(argc, argv);
-  auto node = rclcpp::Node::make_shared("custom_client");
+  auto node   = rclcpp::Node::make_shared("custom_client");
   auto client = node->create_client<moveit::srv::VectorDistance>("/VectorDistance");
 
-  while (!client->wait_for_service(3s)) {
-    if (!rclcpp::ok()) {
-      RCLCPP_ERROR(node->get_logger(), "ROS kapatıldı / servis beklenemiyor.");
-      return 1;
+  // Servis çağrısı helper'ı
+  auto send_req = [node, client](double x, double y, double z)
+  {
+    if (!client->wait_for_service(0s)) {
+      RCLCPP_WARN(node->get_logger(), "VectorDistance servisi hazir degil.");
+      return;
     }
-    RCLCPP_INFO(node->get_logger(), "VectorDistance bekleniyor...");
-  }
+    auto req = std::make_shared<moveit::srv::VectorDistance::Request>();
+    req->x = x; req->y = y; req->z = z;
 
-  std::deque<Vec> positions;
-  auto request = std::make_shared<moveit::srv::VectorDistance::Request>();
-  int i = 0;
+    client->async_send_request(
+      req,
+      [node](rclcpp::Client<moveit::srv::VectorDistance>::SharedFuture resp) {
+        RCLCPP_INFO(node->get_logger(), "Response: %s", resp.get()->distance.c_str());
+      }
+    );
+  };
 
-  for (const auto& item : j) {
-    positions.push_back({ item["x"].get<double>(), item["y"].get<double>(), item["z"].get<double>() });
+  // GUI'den gelen (x,y,z)
+  auto sub = node->create_subscription<geometry_msgs::msg::Point>(
+    "/vector_distance_input", 10,
+    [send_req, node](geometry_msgs::msg::Point::ConstSharedPtr msg) {
+      RCLCPP_INFO(node->get_logger(), "GUI -> x=%.3f y=%.3f z=%.3f", msg->x, msg->y, msg->z);
+      send_req(msg->x, msg->y, msg->z);
+    }
+  );
 
-    request->x = positions[i].x;
-    request->y = positions[i].y;
-    request->z = positions[i].z;
-
-    auto result_future = client->async_send_request(request);
-    if (rclcpp::spin_until_future_complete(node, result_future) == rclcpp::FutureReturnCode::SUCCESS) {
-      RCLCPP_INFO(node->get_logger(), "Distance: %s", result_future.get()->distance.c_str());
+  // (Opsiyonel) JSON’dan ön değerleri gönder
+  try {
+    std::ifstream data("/home/yilmaz/ros2_ws/src/moveit/veri.json");
+    if (data.is_open()) {
+      json j; data >> j;
+      for (const auto& item : j) {
+        double x = item.value("x", 0.0);
+        double y = item.value("y", 0.0);
+        double z = item.value("z", 0.0);
+        RCLCPP_INFO(node->get_logger(), "JSON -> x=%.3f y=%.3f z=%.3f", x, y, z);
+        send_req(x, y, z);
+        rclcpp::sleep_for(100ms);
+      }
     } else {
-      RCLCPP_ERROR(node->get_logger(), "Not found: VectorDistance");
+      RCLCPP_INFO(node->get_logger(), "veri.json yok, GUI'den bekleniyor...");
     }
-    ++i;
-
-    rclcpp::sleep_for(100ms);
+  } catch (...) {
+    RCLCPP_WARN(node->get_logger(), "veri.json okunamadı ya da gecersiz.");
   }
 
-  char c = 'a';
-  while (c != 'q') {
-    RCLCPP_INFO(node->get_logger(), "\nDevam etmek için bir tuşa basın.\nÇıkmak için 'q' ya basın.");
-    std::cin >> c;
-    if (c == 'q') break;
-
-    double x_, y_, z_;
-    RCLCPP_INFO(node->get_logger(), "3 adet double değeri giriniz (x y z):");
-    std::cin >> x_ >> y_ >> z_;
-
-    positions.push_back({ x_, y_, z_ });
-
-    request->x = positions[i].x;
-    request->y = positions[i].y;
-    request->z = positions[i].z;
-
-    auto result_future = client->async_send_request(request);
-    if (rclcpp::spin_until_future_complete(node, result_future) == rclcpp::FutureReturnCode::SUCCESS) {
-      RCLCPP_INFO(node->get_logger(), "Distance: %s", result_future.get()->distance.c_str());
-    } else {
-      RCLCPP_ERROR(node->get_logger(), "Not found: VectorDistance");
-    }
-    ++i;
-  }
-
+  RCLCPP_INFO(node->get_logger(), "custom_client calisiyor. GUI'den /vector_distance_input bekleniyor.");
+  rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
 }
