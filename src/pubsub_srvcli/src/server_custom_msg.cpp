@@ -4,7 +4,7 @@
 #include <cmath>  
 
 
-void add(const std::shared_ptr<pubsub_srvcli::srv::VectorDistance::Request> request,
+void add(const std::shared_ptr<pubsub_srvcli::srv::VectorDistance::Request> request, 
          std::shared_ptr<pubsub_srvcli::srv::VectorDistance::Response> response)
 {
    

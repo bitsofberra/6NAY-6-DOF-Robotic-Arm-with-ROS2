@@ -39,10 +39,9 @@ int main()
 
     auto request = std::make_shared<pubsub_srvcli::srv::VectorDistance::Request>();
 
-    char c = 'q' ;
-    char q = 'a';
+    char q = 'q' ;
+    char c = 'a';
     int i=0;
-
 
     while (!client->wait_for_service(3s)) {
         if (!rclcpp::ok()) {
@@ -51,7 +50,6 @@ int main()
         }
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Try again later.");
     }
-
 
     for (const auto& item : j)
     {
@@ -69,19 +67,24 @@ int main()
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Distance: %f", result_future.get()->distance);
     } else {
         RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Not found: VectorDistance");
-    }
-
-        
-    }
+    }        
+}
     
   
 
-    while (c!=q)
+    while (q!=c)
     {
     
     RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "\n devam etmek için bir tuşa bas.\n çıkmak için q ya basın.");
 
-    std::cin >> q ;
+    std::cin >> c ;
+
+    if (c=='q')
+    {
+    rclcpp::shutdown();
+    return 0;
+    }
+    
 
     double x_, y_, z_ ;    
 
@@ -91,7 +94,6 @@ int main()
 
     positions.push_front({x_, y_, z_});
 
-    
     request->x = (positions[i].x);
     request->y = (positions[i].y);
     request->z = (positions[i].z);

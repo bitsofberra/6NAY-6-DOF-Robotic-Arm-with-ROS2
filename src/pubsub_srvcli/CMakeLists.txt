@@ -20,7 +20,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES std_msgs
 )
 
-include_directories(include /usr/include)
+include_directories(include)
+
 
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} rosidl_typesupport_cpp)
 
@@ -74,6 +75,11 @@ add_executable(client src/client_std_msg.cpp)
 ament_target_dependencies(client rclcpp)
 target_link_libraries(client ${cpp_typesupport_target})
 
+#cpp_hpp_deneme
+add_executable(deneme src/client_hpp_deneme.cpp)
+ament_target_dependencies(deneme rclcpp)
+target_link_libraries(deneme ${cpp_typesupport_target})
+
 
 
 install(TARGETS
@@ -85,6 +91,7 @@ install(TARGETS
   custom_client
   server
   client
+  deneme
   DESTINATION lib/${PROJECT_NAME}
 )
 
