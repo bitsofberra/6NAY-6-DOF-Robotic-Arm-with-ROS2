@@ -30,7 +30,6 @@ int main(int argc, char **argv)
     rclcpp::init(argc, argv);
     auto node = rclcpp::Node::make_shared("server_custom_msg");
 
-    // Burada servis adını "calculate_distance" olarak değiştiriyoruz
     auto service = node->create_service<VectorDistance>(
         "calculate_distance", &handle_request);
 

@@ -25,6 +25,7 @@ include_directories(include /usr/include)
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} rosidl_typesupport_cpp)
 
 
+
 # Custom subscriber
 add_executable(custom_subscriber src/subscriber_custom_msg.cpp)
 target_include_directories(custom_subscriber PUBLIC

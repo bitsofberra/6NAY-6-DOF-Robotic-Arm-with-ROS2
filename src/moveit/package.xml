@@ -1,0 +1,48 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>moveit</name>
+  <version>0.0.1</version>
+  <description>Panda + sahne örnekleri ve EEF hedef node'u; ayrıca VectorDistance servisi.</description>
+
+  <maintainer email="you@example.com">Your Name</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <!-- Build tool -->
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Arayüz üretimi -->
+  <build_depend>rosidl_default_generators</build_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+  <!-- Derleme/Çalışma bağımlılıkları -->
+  <depend>rclcpp</depend>
+  <depend>moveit_ros_planning_interface</depend>
+  <depend>geometry_msgs</depend>
+  <depend>moveit_msgs</depend>
+  <depend>shape_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>nlohmann_json</depend>
+
+  <!-- (İsteğe bağlı) araçlar -->
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>joint_trajectory_controller</exec_depend>
+  <exec_depend>position_controllers</exec_depend>
+  <exec_depend>moveit_configs_utils</exec_depend>
+
+
+  <!-- Panda örnek konfigleri -->
+  <exec_depend>moveit_resources_panda_moveit_config</exec_depend>
+
+  <!-- DİKKAT: grup üyeliği ÜST DÜZEYDE olmalı -->
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
+

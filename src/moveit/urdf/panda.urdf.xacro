@@ -1,0 +1,195 @@
+<?xml version="1.0"?>
+<robot name="panda_scene" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ======= SAHNE PARAMETRELERİ (ARG'SIZ, DOĞRUDAN KULLAN) ======= -->
+  <!-- Masa boyutları (L W H) ve merkezi -->
+  <xacro:property name="table_l" value="0.60"/>
+  <xacro:property name="table_w" value="0.50"/>
+  <xacro:property name="table_h" value="0.40"/>
+  <xacro:property name="table_x" value="0.50"/>
+  <xacro:property name="table_y" value="0.25"/>
+  <xacro:property name="table_z" value="0.20"/>   <!-- merkezin z'si = H/2 -->
+
+  <!-- Kutu boyutları (L W H) ve merkezi (masanın üstünde) -->
+  <xacro:property name="box_l" value="0.04"/>
+  <xacro:property name="box_w" value="0.04"/>
+  <xacro:property name="box_h" value="0.12"/>
+  <xacro:property name="box_x" value="0.50"/>
+  <xacro:property name="box_y" value="0.25"/>
+  <xacro:property name="box_z" value="0.46"/>  <!-- table_top + box_h/2 -->
+
+  <!-- Dünya çerçevesi -->
+  <link name="world"/>
+
+  <!-- =========================
+       PANDA ROBOT (özet URDF)
+       ========================= -->
+  <link name="panda_link0">
+    <visual><geometry><mesh filename="package://moveit_resources_panda_description/meshes/visual/link0.dae"/></geometry></visual>
+    <collision><geometry><mesh filename="package://moveit_resources_panda_description/meshes/collision/link0.stl"/></geometry></collision>
+  </link>
+
+  <!-- world -> panda_link0 -->
+  <joint name="world_to_panda" type="fixed">
+    <parent link="world"/>
+    <child  link="panda_link0"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="panda_link1">
+    <visual><geometry><mesh filename="package://moveit_resources_panda_description/meshes/visual/link1.dae"/></geometry></visual>
+    <collision><geometry><mesh filename="package://moveit_resources_panda_description/meshes/collision/link1.stl"/></geometry></collision>
+  </link>
+  <joint name="panda_joint1" type="revolute">
+    <parent link="panda_link0"/><child link="panda_link1"/>
+    <origin xyz="0 0 0.333" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="87" lower="-2.9671" upper="2.9671" velocity="2.3925"/>
+    <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="-2.8973" soft_upper_limit="2.8973"/>
+  </joint>
+
+  <link name="panda_link2">
+    <visual><geometry><mesh filename="package://moveit_resources_panda_description/meshes/visual/link2.dae"/></geometry></visual>
+    <collision><geometry><mesh filename="package://moveit_resources_panda_description/meshes/collision/link2.stl"/></geometry></collision>
+  </link>
+  <joint name="panda_joint2" type="revolute">
+    <parent link="panda_link1"/><child link="panda_link2"/>
+    <origin xyz="0 0 0" rpy="-1.57079632679 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="87" lower="-1.8326" upper="1.8326" velocity="2.3925"/>
+    <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="-1.7628" soft_upper_limit="1.7628"/>
+  </joint>
+
+  <link name="panda_link3">
+    <visual><geometry><mesh filename="package://moveit_resources_panda_description/meshes/visual/link3.dae"/></geometry></visual>
+    <collision><geometry><mesh filename="package://moveit_resources_panda_description/meshes/collision/link3.stl"/></geometry></collision>
+  </link>
+  <joint name="panda_joint3" type="revolute">
+    <parent link="panda_link2"/><child link="panda_link3"/>
+    <origin xyz="0 -0.316 0" rpy="1.57079632679 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="87" lower="-2.9671" upper="2.9671" velocity="2.3925"/>
+    <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="-2.8973" soft_upper_limit="2.8973"/>
+  </joint>
+
+  <link name="panda_link4">
+    <visual><geometry><mesh filename="package://moveit_resources_panda_description/meshes/visual/link4.dae"/></geometry></visual>
+    <collision><geometry><mesh filename="package://moveit_resources_panda_description/meshes/collision/link4.stl"/></geometry></collision>
+  </link>
+  <joint name="panda_joint4" type="revolute">
+    <parent link="panda_link3"/><child link="panda_link4"/>
+    <origin xyz="0.0825 0 0" rpy="1.57079632679 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="87" lower="-3.1416" upper="0.0873" velocity="2.3925"/>
+    <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="-3.0718" soft_upper_limit="0.0175"/>
+  </joint>
+
+  <link name="panda_link5">
+    <visual><geometry><mesh filename="package://moveit_resources_panda_description/meshes/visual/link5.dae"/></geometry></visual>
+    <collision><geometry><mesh filename="package://moveit_resources_panda_description/meshes/collision/link5.stl"/></geometry></collision>
+  </link>
+  <joint name="panda_joint5" type="revolute">
+    <parent link="panda_link4"/><child link="panda_link5"/>
+    <origin xyz="-0.0825 0.384 0" rpy="-1.57079632679 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="12" lower="-2.9671" upper="2.9671" velocity="2.8710"/>
+    <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="-2.8973" soft_upper_limit="2.8973"/>
+  </joint>
+
+  <link name="panda_link6">
+    <visual><geometry><mesh filename="package://moveit_resources_panda_description/meshes/visual/link6.dae"/></geometry></visual>
+    <collision><geometry><mesh filename="package://moveit_resources_panda_description/meshes/collision/link6.stl"/></geometry></collision>
+  </link>
+  <joint name="panda_joint6" type="revolute">
+    <parent link="panda_link5"/><child link="panda_link6"/>
+    <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="12" lower="-0.0873" upper="3.8223" velocity="2.8710"/>
+    <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="-0.0175" soft_upper_limit="3.7525"/>
+  </joint>
+
+  <link name="panda_link7">
+    <visual><geometry><mesh filename="package://moveit_resources_panda_description/meshes/visual/link7.dae"/></geometry></visual>
+    <collision><geometry><mesh filename="package://moveit_resources_panda_description/meshes/collision/link7.stl"/></geometry></collision>
+  </link>
+  <joint name="panda_joint7" type="revolute">
+    <parent link="panda_link6"/><child link="panda_link7"/>
+    <origin xyz="0.088 0 0" rpy="1.57079632679 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="12" lower="-2.9671" upper="2.9671" velocity="2.8710"/>
+    <safety_controller k_position="100.0" k_velocity="40.0" soft_lower_limit="-2.8973" soft_upper_limit="2.8973"/>
+  </joint>
+
+  <link name="panda_link8"/>
+  <joint name="panda_joint8" type="fixed">
+    <parent link="panda_link7"/><child link="panda_link8"/>
+    <origin xyz="0 0 0.107" rpy="0 0 0"/>
+  </joint>
+
+  <link name="panda_hand">
+    <visual><geometry><mesh filename="package://moveit_resources_panda_description/meshes/visual/hand.dae"/></geometry></visual>
+    <collision><geometry><mesh filename="package://moveit_resources_panda_description/meshes/collision/hand.stl"/></geometry></collision>
+  </link>
+  <joint name="panda_hand_joint" type="fixed">
+    <parent link="panda_link8"/><child link="panda_hand"/>
+    <origin xyz="0 0 0" rpy="0 0 -0.785398163397"/>
+  </joint>
+
+  <link name="panda_leftfinger">
+    <visual><geometry><mesh filename="package://moveit_resources_panda_description/meshes/visual/finger.dae"/></geometry></visual>
+    <collision><geometry><mesh filename="package://moveit_resources_panda_description/meshes/collision/finger.stl"/></geometry></collision>
+  </link>
+  <link name="panda_rightfinger">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 3.14159265359"/>
+      <geometry><mesh filename="package://moveit_resources_panda_description/meshes/visual/finger.dae"/></geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 3.14159265359"/>
+      <geometry><mesh filename="package://moveit_resources_panda_description/meshes/collision/finger.stl"/></geometry>
+    </collision>
+  </link>
+  <joint name="panda_finger_joint1" type="prismatic">
+    <parent link="panda_hand"/><child link="panda_leftfinger"/>
+    <origin xyz="0 0 0.0584" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="20" lower="0.0" upper="0.04" velocity="0.2"/>
+  </joint>
+  <joint name="panda_finger_joint2" type="prismatic">
+    <parent link="panda_hand"/><child link="panda_rightfinger"/>
+    <origin xyz="0 0 0.0584" rpy="0 0 0"/>
+    <axis xyz="0 -1 0"/>
+    <limit effort="20" lower="0.0" upper="0.04" velocity="0.2"/>
+    <mimic joint="panda_finger_joint1"/>
+  </joint>
+
+  <!-- =========================
+       SAHNE: MASA + KUTU
+       ========================= -->
+  <joint name="table_joint" type="fixed">
+    <parent link="world"/>
+    <child  link="table_link"/>
+    <origin xyz="${table_x} ${table_y} ${table_z}" rpy="0 0 0"/>
+  </joint>
+  <link name="table_link">
+    <visual>
+      <geometry><box size="${table_l} ${table_w} ${table_h}"/></geometry>
+      <material name="grey"><color rgba="0.6 0.6 0.6 1.0"/></material>
+    </visual>
+    <collision><geometry><box size="${table_l} ${table_w} ${table_h}"/></geometry></collision>
+  </link>
+
+  <joint name="box_joint" type="fixed">
+    <parent link="world"/>
+    <child  link="box_link"/>
+    <origin xyz="${box_x} ${box_y} ${box_z}" rpy="0 0 0"/>
+  </joint>
+  <link name="box_link">
+    <visual>
+      <geometry><box size="${box_l} ${box_w} ${box_h}"/></geometry>
+      <material name="green"><color rgba="0.0 1.0 0.0 0.7"/></material>
+    </visual>
+    <collision><geometry><box size="${box_l} ${box_w} ${box_h}"/></geometry></collision>
+  </link>
+
+</robot>
