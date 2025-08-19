@@ -56,6 +56,13 @@ ament_target_dependencies(planning_scene_relay
 install(TARGETS planning_scene_relay
   RUNTIME DESTINATION lib/${PROJECT_NAME})
 
+
+add_executable(pick_place_node src/pick_place_node.cpp)
+ament_target_dependencies(pick_place_node
+  rclcpp moveit_ros_planning_interface geometry_msgs moveit_msgs shape_msgs tf2_geometry_msgs)
+install(TARGETS pick_place_node DESTINATION lib/${PROJECT_NAME})
+
+
 # ---- custom_client (GUI'den gelen (x,y,z) topic'ini dinleyip SERVİS çağırır) ----
 add_executable(custom_client src/moveit_client.cpp)
 ament_target_dependencies(custom_client

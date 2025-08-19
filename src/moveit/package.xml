@@ -22,7 +22,15 @@
   <depend>shape_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_geometry_msgs</depend>
-  <depend>nlohmann_json</depend>
+
+  <!-- Sistem/3rd-party bağımlılıkları (rosdep adları) -->
+  <!-- CMake'te find_package(nlohmann_json) kullanıyorsun -->
+  <build_depend>nlohmann-json3-dev</build_depend>
+  <exec_depend>nlohmann-json3-dev</exec_depend>
+
+  <!-- Qt5 Widgets kullanan GUI için (vector_input_gui) -->
+  <build_depend>qtbase5-dev</build_depend>
+  <exec_depend>qtbase5-dev</exec_depend>
 
   <!-- (İsteğe bağlı) araçlar -->
   <exec_depend>rviz2</exec_depend>
@@ -34,15 +42,17 @@
   <exec_depend>position_controllers</exec_depend>
   <exec_depend>moveit_configs_utils</exec_depend>
 
+  <!-- Launch dosyası kullanacaksan -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
 
   <!-- Panda örnek konfigleri -->
   <exec_depend>moveit_resources_panda_moveit_config</exec_depend>
 
-  <!-- DİKKAT: grup üyeliği ÜST DÜZEYDE olmalı -->
+  <!-- Bu paket arayüz de ürettiği için -->
   <member_of_group>rosidl_interface_packages</member_of_group>
 
   <export>
     <build_type>ament_cmake</build_type>
   </export>
 </package>
-
