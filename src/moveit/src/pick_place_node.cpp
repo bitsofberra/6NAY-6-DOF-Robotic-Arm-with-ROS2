@@ -8,6 +8,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/executors/single_threaded_executor.hpp>
 #include <rclcpp/parameter_client.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <shape_msgs/msg/solid_primitive.hpp>
@@ -18,36 +19,43 @@
 #include <moveit_msgs/srv/get_planning_scene.hpp>
 #include <moveit_msgs/msg/planning_scene_components.hpp>
 #include <moveit_msgs/msg/robot_trajectory.hpp>
+#include <moveit_msgs/msg/move_it_error_codes.hpp>
+#include <control_msgs/action/gripper_command.hpp>
 
 using namespace std::chrono_literals;
 
 class PickPlaceNode : public rclcpp::Node
 {
 public:
+  using GripperCmd = control_msgs::action::GripperCommand;
+  using GripperClient = rclcpp_action::Client<GripperCmd>;
+
   PickPlaceNode()
   : Node("pick_place_node",
          rclcpp::NodeOptions()
            .allow_undeclared_parameters(true)
            .automatically_declare_parameters_from_overrides(true))
   {
-    // ---- güvenli declare/get ----
     planning_group_ = pget<std::string>("planning_group", "panda_arm");
     eef_link_       = pget<std::string>("eef_link",       "panda_link8");
-    world_frame_    = pget<std::string>("world_frame",    "world");
+    world_frame_    = pget<std::string>("world_frame",    "panda_link0"); // server ile ayni
 
     vel_scale_      = pget<double>("vel_scale", 0.35);
     acc_scale_      = pget<double>("acc_scale", 0.35);
-    eef_step_       = pget<double>("eef_step",  0.01);
-    cart_min_frac_  = pget<double>("cart_min_frac", 0.50);
-    cart_segments_  = pget<int>("cart_segments", 3);
+    eef_step_       = pget<double>("eef_step",  0.004);
+    cart_min_frac_  = pget<double>("cart_min_frac", 0.45);
+    cart_segments_  = pget<int>("cart_segments", 6);
 
-    approach_z_     = pget<double>("approach_z", 0.20);
+    approach_z_     = pget<double>("approach_z", 0.24);
     retreat_z_      = pget<double>("retreat_z",  0.20);
-    pick_clearance_ = pget<double>("pick_clearance", 0.06);
+    pick_clearance_ = pget<double>("pick_clearance", 0.08);
     place_dx_       = pget<double>("place_dx",  -0.20);
     place_dy_       = pget<double>("place_dy",  -0.20);
 
     ensure_box_     = pget<bool>("ensure_box", true);
+    allow_touch_    = pget<bool>("allow_touch", true);
+    attach_after_pick_ = pget<bool>("attach_after_pick", true);
+
     box_x_ = pget<double>("box_x", 0.50);
     box_y_ = pget<double>("box_y", 0.10);
     box_z_ = pget<double>("box_z", 0.445);
@@ -55,9 +63,17 @@ public:
     box_sy_ = pget<double>("box_size_y", 0.06);
     box_sz_ = pget<double>("box_size_z", 0.05);
 
-    // set_parameters için ön-declare
+    // Gripper
+    gripper_action_ns_ = pget<std::string>("gripper_action", "/panda_hand_controller/gripper_cmd");
+    grip_open_  = pget<double>("grip_open",  0.080);
+    grip_close_ = pget<double>("grip_close", 0.030);
+    grip_effort_= pget<double>("grip_effort", 40.0);
+    grip_wait_s_= pget<double>("grip_wait_s", 3.0);
+
     pensure<std::string>("robot_description", "");
     pensure<std::string>("robot_description_semantic", "");
+
+    gripper_client_ = rclcpp_action::create_client<GripperCmd>(this, gripper_action_ns_);
 
     RCLCPP_INFO(get_logger(), "PickPlaceNode hazir. group=%s eef=%s frame=%s",
                 planning_group_.c_str(), eef_link_.c_str(), world_frame_.c_str());
@@ -70,7 +86,7 @@ public:
     exec.add_node(self);
 
     if (!mirror_moveit_params(exec)) {
-      RCLCPP_FATAL(get_logger(), "FATAL: MoveIt parametreleri mirror edilemedi. (move_group/rviz2/robot_state_publisher calisiyor mu?)");
+      RCLCPP_FATAL(get_logger(), "FATAL: MoveIt parametreleri mirror edilemedi.");
       return 2;
     }
 
@@ -83,12 +99,11 @@ public:
     mgi.setMaxVelocityScalingFactor(vel_scale_);
     mgi.setMaxAccelerationScalingFactor(acc_scale_);
     mgi.setGoalPositionTolerance(0.01);
-    mgi.setGoalOrientationTolerance(0.7);  // daha rahat (≈40°)
+    mgi.setGoalOrientationTolerance(0.7);
     mgi.setGoalJointTolerance(0.01);
     mgi.setWorkspace(-1.0, -1.0, 0.0, 1.5, 1.5, 1.5);
 
-    rclcpp::sleep_for(150ms);
-    try_set_named(mgi, "ready");
+    rclcpp::sleep_for(300ms);
 
     if (ensure_box_) ensure_box_in_scene();
 
@@ -119,15 +134,46 @@ public:
     const geometry_msgs::msg::Pose place     = pose_at(place_cx, place_cy,
                                                        table_top_z + half_h + pick_clearance_);
 
-    if (!plan_and_execute_pose(mgi, pre_pick,  "pre-pick", /*relaxed*/true))  return fail_and_exit("Plan bulunamadi (pre-pick).");
+    // 1) yaklaşmadan önce gripper açık
+    (void)gripper_open(exec);
 
+    if (!plan_and_execute_pose(mgi, pre_pick,  "pre-pick", /*relaxed*/true))
+      return fail_and_exit("Plan bulunamadi (pre-pick).");
+
+    // 2) dik iniş (segmentli kartesyen) ya da fallback plan
     if (!descend_cartesian_segmented(mgi, pre_pick, pick))
-      if (!plan_and_execute_pose(mgi, pick, "pick", /*relaxed*/true))         return fail_and_exit("Plan bulunamadi (pick).");
+      if (!plan_and_execute_pose(mgi, pick, "pick", /*relaxed*/true))
+        return fail_and_exit("Plan bulunamadi (pick).");
 
-    if (!plan_and_execute_pose(mgi, pre_place, "pre-place", /*relaxed*/true)) return fail_and_exit("Plan bulunamadi (pre-place).");
+    // 3) gripper kapat ve ataşla
+    (void)gripper_close(exec);
+    if (attach_after_pick_) {
+      attach_object_to_eef("box");
+      RCLCPP_INFO(get_logger(), "Obje EEF'e attach edildi.");
+    }
+
+    // 4) yukarı kaçış
+    geometry_msgs::msg::Pose retreat = pick;
+    retreat.position.z += retreat_z_;
+    (void)descend_cartesian_segmented(mgi, pick, retreat);
+    rclcpp::sleep_for(200ms);
+
+    // 5) pre-place ve place
+    if (!plan_and_execute_pose(mgi, pre_place, "pre-place", /*relaxed*/true))
+      return fail_and_exit("Plan bulunamadi (pre-place).");
 
     if (!descend_cartesian_segmented(mgi, pre_place, place))
-      if (!plan_and_execute_pose(mgi, place, "place", /*relaxed*/true))       return fail_and_exit("Plan bulunamadi (place).");
+      if (!plan_and_execute_pose(mgi, place, "place", /*relaxed*/true))
+        return fail_and_exit("Plan bulunamadi (place).");
+
+    // 6) brak ve detach
+    (void)gripper_open(exec);
+    detach_object_from_eef("box");
+
+    // 7) yukarı kalk
+    geometry_msgs::msg::Pose post_place = place;
+    post_place.position.z += retreat_z_;
+    (void)descend_cartesian_segmented(mgi, place, post_place);
 
     RCLCPP_INFO(get_logger(), "Pick & Place BASARILI.");
     return 0;
@@ -355,14 +401,27 @@ private:
            std::fabs(p.position.z) < 1e-6;
   }
 
+  // ---------- timing helper ----------
+  static void add_uniform_timestamps(moveit_msgs::msg::RobotTrajectory &traj, double dt_sec = 0.02)
+  {
+    if (traj.joint_trajectory.points.empty()) return;
+    double t = 0.0;
+    for (auto &pt : traj.joint_trajectory.points) {
+      int64_t nsec = static_cast<int64_t>(t * 1e9 + 0.5);
+      pt.time_from_start.sec = static_cast<int32_t>(nsec / 1000000000LL);
+      pt.time_from_start.nanosec = static_cast<uint32_t>(nsec % 1000000000LL);
+      t += dt_sec;
+    }
+  }
+
   // ---------- planning helpers ----------
   bool plan_and_execute_pose(moveit::planning_interface::MoveGroupInterface &mgi,
                              const geometry_msgs::msg::Pose &pose,
                              const char* tag,
                              bool relaxed)
   {
-    // 1) tam POSE
     mgi.clearPoseTargets();
+    rclcpp::sleep_for(50ms);
     mgi.setStartStateToCurrentState();
     mgi.setPoseTarget(pose, eef_link_);
     moveit::planning_interface::MoveGroupInterface::Plan plan;
@@ -373,7 +432,6 @@ private:
     }
     if (!relaxed) { RCLCPP_ERROR(get_logger(), "Plan bulunamadi (%s).", tag); return false; }
 
-    // 2) yaklaşık IK
     try {
       if (mgi.setApproximateJointValueTarget(pose, eef_link_)) {
         moveit::planning_interface::MoveGroupInterface::Plan p2;
@@ -385,7 +443,6 @@ private:
       }
     } catch (...) {}
 
-    // 3) yalnız pozisyon
     mgi.clearPoseTargets();
     mgi.setStartStateToCurrentState();
     mgi.setPositionTarget(pose.position.x, pose.position.y, pose.position.z, eef_link_);
@@ -410,40 +467,111 @@ private:
       moveit_msgs::msg::RobotTrajectory traj;
       mgi.setStartStateToCurrentState();
       double frac = mgi.computeCartesianPath(wps, eef_step_, traj, /*avoid_collisions=*/true);
-      if (frac < cart_min_frac_) return false;
-      return mgi.execute(traj) == moveit::core::MoveItErrorCode::SUCCESS;
+      if (frac < cart_min_frac_) {
+        RCLCPP_WARN(get_logger(), "Segment kartesyen frac=%.2f (min %.2f) -> red.", frac, cart_min_frac_);
+        return false;
+      }
+      add_uniform_timestamps(traj, 0.02);  // 20 ms adım
+      auto rc = mgi.execute(traj);
+      if (rc != moveit::core::MoveItErrorCode::SUCCESS) {
+        RCLCPP_ERROR(get_logger(), "Kartesyen yurutme basarisiz.");
+        return false;
+      }
+      rclcpp::sleep_for(80ms);
+      return true;
     };
 
     geometry_msgs::msg::Pose prev = from;
-    for (int i=1; i<=std::max(1,cart_segments_); ++i) {
-      double t = static_cast<double>(i) / std::max(1,cart_segments_);
+    const int N = std::max(1,cart_segments_);
+    for (int i=1; i<=N; ++i) {
+      const double t = static_cast<double>(i) / N;
       geometry_msgs::msg::Pose mid = to;
       mid.position.x = from.position.x + t*(to.position.x - from.position.x);
       mid.position.y = from.position.y + t*(to.position.y - from.position.y);
       mid.position.z = from.position.z + t*(to.position.z - from.position.z);
-      // oryantasyonu sabit tut
       mid.orientation = to.orientation;
 
       if (!cart_one(prev, mid)) {
-        RCLCPP_WARN(get_logger(), "Segment %d/%d kartesyen yol uretilemedi (min_frac=%.2f).", i, cart_segments_, cart_min_frac_);
+        RCLCPP_WARN(get_logger(), "Segment %d/%d kartesyen yol uretilemedi (min_frac=%.2f).", i, N, cart_min_frac_);
         return false;
       }
       prev = mid;
-      rclcpp::sleep_for(50ms);
     }
     return true;
   }
 
-  void try_set_named(moveit::planning_interface::MoveGroupInterface &mgi, const std::string &state)
+  // ---------- gripper helpers (AYNI EXECUTOR İLE!) ----------
+  bool gripper_open (rclcpp::executors::SingleThreadedExecutor& exec) { return send_gripper_command(exec, grip_open_,  grip_effort_, grip_wait_s_, "open"); }
+  bool gripper_close(rclcpp::executors::SingleThreadedExecutor& exec) { return send_gripper_command(exec, grip_close_, grip_effort_, grip_wait_s_, "close"); }
+
+  bool send_gripper_command(rclcpp::executors::SingleThreadedExecutor& exec,
+                            double width, double effort, double wait_s, const char* tag)
   {
-    const auto names = mgi.getNamedTargets();
-    if (std::find(names.begin(), names.end(), state) == names.end()) return;
+    if (!gripper_client_->wait_for_action_server(1s)) {
+      RCLCPP_WARN(get_logger(), "[gripper] Action server yok (%s). Devam.", gripper_action_ns_.c_str());
+      return false;
+    }
+    auto goal = GripperCmd::Goal();
+    goal.command.position   = width;
+    goal.command.max_effort = effort;
+
+    auto send_opts = typename GripperClient::SendGoalOptions();
+    send_opts.result_callback = [](const rclcpp_action::ClientGoalHandle<GripperCmd>::WrappedResult&){};
+
+    auto fut_goal = gripper_client_->async_send_goal(goal, send_opts);
+    if (exec.spin_until_future_complete(fut_goal, std::chrono::duration<double>(wait_s))
+          != rclcpp::FutureReturnCode::SUCCESS) {
+      RCLCPP_WARN(get_logger(), "[gripper] goal gönderilemedi (%s).", tag);
+      return false;
+    }
+    auto ghandle = fut_goal.get();
+    if (!ghandle) {
+      RCLCPP_WARN(get_logger(), "[gripper] goal handle null (%s).", tag);
+      return false;
+    }
+    auto fut_res = gripper_client_->async_get_result(ghandle);
+    (void)exec.spin_until_future_complete(fut_res, std::chrono::duration<double>(wait_s));
+    RCLCPP_INFO(get_logger(), "[gripper] komut tamam (%s, hedef=%.3f).", tag, width);
+    return true;
+  }
+
+  // ---------- attach/detach ----------
+  void attach_object_to_eef(const std::string &object_id)
+  {
+    moveit::planning_interface::PlanningSceneInterface psi;
+    std::vector<std::string> touch_links = {
+      "panda_hand", "panda_leftfinger", "panda_rightfinger", eef_link_
+    };
+    if (!allow_touch_) touch_links.clear();
+
     try {
-      mgi.setNamedTarget(state);
-      moveit::planning_interface::MoveGroupInterface::Plan plan;
-      if (mgi.plan(plan) == moveit::core::MoveItErrorCode::SUCCESS)
-        (void)mgi.execute(plan);
-    } catch (...) {}
+      moveit::planning_interface::MoveGroupInterface mgi(this->shared_from_this(), planning_group_);
+      mgi.attachObject(object_id, /*link=*/eef_link_, touch_links);
+    } catch (...) {
+      moveit_msgs::msg::AttachedCollisionObject aco;
+      aco.object.id = object_id;
+      aco.link_name = eef_link_;
+      aco.touch_links = touch_links;
+      aco.object.operation = aco.object.ADD;
+      psi.applyAttachedCollisionObject(aco);
+    }
+    rclcpp::sleep_for(100ms);
+  }
+
+  void detach_object_from_eef(const std::string &object_id)
+  {
+    try {
+      moveit::planning_interface::MoveGroupInterface mgi(this->shared_from_this(), planning_group_);
+      mgi.detachObject(object_id);
+    } catch (...) {
+      moveit::planning_interface::PlanningSceneInterface psi;
+      moveit_msgs::msg::AttachedCollisionObject aco;
+      aco.object.id = object_id;
+      aco.link_name = eef_link_;
+      aco.object.operation = aco.object.REMOVE;
+      psi.applyAttachedCollisionObject(aco);
+    }
+    rclcpp::sleep_for(100ms);
   }
 
   int fail_and_exit(const char *msg)
@@ -456,11 +584,16 @@ private:
 private:
   // params
   std::string planning_group_, eef_link_, world_frame_;
-  double vel_scale_{0.35}, acc_scale_{0.35}, eef_step_{0.01}, cart_min_frac_{0.50};
-  int cart_segments_{3};
-  double approach_z_{0.20}, retreat_z_{0.20}, pick_clearance_{0.06}, place_dx_{-0.20}, place_dy_{-0.20};
-  bool ensure_box_{true};
+  double vel_scale_{0.35}, acc_scale_{0.35}, eef_step_{0.004}, cart_min_frac_{0.45};
+  int cart_segments_{6};
+  double approach_z_{0.24}, retreat_z_{0.20}, pick_clearance_{0.08}, place_dx_{-0.20}, place_dy_{-0.20};
+  bool ensure_box_{true}, allow_touch_{true}, attach_after_pick_{true};
   double box_x_{0.50}, box_y_{0.10}, box_z_{0.445}, box_sx_{0.06}, box_sy_{0.06}, box_sz_{0.05};
+
+  // gripper
+  std::string gripper_action_ns_;
+  double grip_open_{0.080}, grip_close_{0.030}, grip_effort_{40.0}, grip_wait_s_{3.0};
+  GripperClient::SharedPtr gripper_client_;
 };
 
 int main(int argc, char **argv)

@@ -80,6 +80,8 @@ ament_target_dependencies(pick_place_node
   shape_msgs
   tf2_geometry_msgs
   sensor_msgs
+
+  
 )
 
 install(TARGETS pick_place_node
