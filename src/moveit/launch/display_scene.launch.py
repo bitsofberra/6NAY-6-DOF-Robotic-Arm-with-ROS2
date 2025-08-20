@@ -85,6 +85,8 @@ def generate_launch_description():
         output='screen',
     )
 
+    
+
     return LaunchDescription([
         static_tf,
         rsp,

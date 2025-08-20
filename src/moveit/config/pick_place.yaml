@@ -1,0 +1,20 @@
+pick_place_node:
+  ros__parameters:
+    # Kutu (merkez) pozu ve boyutları
+    box_x: 0.50
+    box_y: 0.10
+    box_z: 0.445
+    box_size_x: 0.06
+    box_size_y: 0.06
+    box_size_z: 0.05
+
+    # Bırakma hedefi (merkez)
+    place_x: 0.30
+    place_y: -0.30
+    place_z: 0.46
+
+    # Kartesyen inis yüzdesi (min.)
+    cart_min_frac: 0.6
+
+    # Aynı isimde kutu sahnedeyse tekrar yaratma
+    ensure_box: false
