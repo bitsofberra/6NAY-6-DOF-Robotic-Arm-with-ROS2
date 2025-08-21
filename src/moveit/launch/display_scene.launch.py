@@ -50,19 +50,25 @@ def generate_launch_description():
         output='screen',
     )
 
-    # planning_scene_relay (isteğe bağlı)
     relay = Node(
         package='moveit',
         executable='planning_scene_relay',
         output='screen',
     )
 
+
+
     server = Node(
         package='moveit',
         executable='custom_server',
-        parameters=[params],
         output='screen',
-    )
+        parameters=[
+            { 'world_frame': 'panda_link0',
+              'spawn_table': True,
+              'spawn_box':   True,
+              'acm_allow_box_and_table': False }
+            ],
+)
 
     rviz = Node(
         package='rviz2',
@@ -72,7 +78,6 @@ def generate_launch_description():
         parameters=[params],
     )
 
-    # YENİ: client ve GUI
     client = Node(
         package='moveit',
         executable='custom_client',
@@ -85,6 +90,8 @@ def generate_launch_description():
         output='screen',
     )
 
+    
+
     return LaunchDescription([
         static_tf,
         rsp,
@@ -92,7 +99,7 @@ def generate_launch_description():
         move_group,
         relay,
         server,
-        client,   # <— client eklendi
-        gui,      # <— GUI eklendi
+        client,   
+        gui,      
         rviz,
     ])
