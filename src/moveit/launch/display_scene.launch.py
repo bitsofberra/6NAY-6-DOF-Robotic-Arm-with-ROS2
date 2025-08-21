@@ -63,6 +63,7 @@ def generate_launch_description():
         executable='custom_server',
         output='screen',
         parameters=[
+             moveit_config.to_dict(),  # <- BUNU EKLEMEZSEK SRDF YOK HATASI GELİR
             { 'world_frame': 'panda_link0',
               'spawn_table': True,
               'spawn_box':   True,

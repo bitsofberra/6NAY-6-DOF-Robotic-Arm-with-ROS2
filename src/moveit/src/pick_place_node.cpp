@@ -20,6 +20,9 @@
 #include <moveit_msgs/msg/planning_scene_components.hpp>
 #include <moveit_msgs/msg/robot_trajectory.hpp>
 #include <moveit_msgs/msg/move_it_error_codes.hpp>
+#include <moveit_msgs/msg/collision_object.hpp>
+#include <moveit_msgs/srv/apply_planning_scene.hpp>
+
 #include <control_msgs/action/gripper_command.hpp>
 
 using namespace std::chrono_literals;
@@ -38,7 +41,7 @@ public:
   {
     planning_group_ = pget<std::string>("planning_group", "panda_arm");
     eef_link_       = pget<std::string>("eef_link",       "panda_link8");
-    world_frame_    = pget<std::string>("world_frame",    "panda_link0"); // server ile ayni
+    world_frame_    = pget<std::string>("world_frame",    "panda_link0");
 
     vel_scale_      = pget<double>("vel_scale", 0.35);
     acc_scale_      = pget<double>("acc_scale", 0.35);
@@ -70,6 +73,7 @@ public:
     grip_effort_= pget<double>("grip_effort", 40.0);
     grip_wait_s_= pget<double>("grip_wait_s", 3.0);
 
+    // MoveIt param mirror için placeholder
     pensure<std::string>("robot_description", "");
     pensure<std::string>("robot_description_semantic", "");
 
@@ -105,12 +109,12 @@ public:
 
     rclcpp::sleep_for(300ms);
 
-    if (ensure_box_) ensure_box_in_scene();
+    if (ensure_box_) ensure_box_in_scene(exec);
 
-    ObjInfo box = query_object_robust("box", exec);
-    if (!box.valid) {
-      RCLCPP_FATAL(get_logger(), "Box bilgisi bulunamadi (sahne/psi/default).");
-      return 3;
+    ObjInfo box;
+    if (!wait_for_object_any("box", exec, /*timeout_sec=*/10.0, box)) {
+      RCLCPP_ERROR(get_logger(), "Box sahnede/attached gorunmuyor ya da geometri/poz hazir degil.");
+      return fail_and_exit("BASARISIZ.");
     }
 
     const double half_h = (box.size_z > 1e-6 ? box.size_z * 0.5 : 0.06);
@@ -269,34 +273,115 @@ private:
     return !out.empty();
   }
 
-  // ---------- scene: box ----------
-  void ensure_box_in_scene()
+  // ---------- yardımcı: geometri & poz kontrol ----------
+  static bool has_valid_pose_and_geometry(const moveit_msgs::msg::CollisionObject &co)
+  {
+    const bool has_pose =
+      (!co.primitive_poses.empty() || !co.mesh_poses.empty() ||
+       (std::abs(co.pose.position.x) > 1e-9 ||
+        std::abs(co.pose.position.y) > 1e-9 ||
+        std::abs(co.pose.position.z) > 1e-9 ||
+        std::abs(co.pose.orientation.w) > 0.0));
+
+    bool has_geom = false;
+    if (!co.primitives.empty()) {
+      const auto &prim = co.primitives.front();
+      has_geom = (prim.type == shape_msgs::msg::SolidPrimitive::BOX &&
+                  prim.dimensions.size() >= 3 &&
+                  prim.dimensions[0] > 0.0 && prim.dimensions[1] > 0.0 && prim.dimensions[2] > 0.0);
+    } else if (!co.meshes.empty()) {
+      has_geom = true;
+    }
+    return has_pose && has_geom;
+  }
+
+  static geometry_msgs::msg::Pose extract_co_pose(const moveit_msgs::msg::CollisionObject &co)
+  {
+    geometry_msgs::msg::Pose p; p.orientation.w = 1.0;
+    if (!co.primitive_poses.empty()) return co.primitive_poses.front();
+    if (!co.mesh_poses.empty())      return co.mesh_poses.front();
+    return co.pose; // bazı yayınlayıcılar sadece burayı dolduruyor
+  }
+
+  geometry_msgs::msg::Pose param_box_pose() const
+  {
+    geometry_msgs::msg::Pose p; p.orientation.w = 1.0;
+    p.position.x = box_x_; p.position.y = box_y_; p.position.z = box_z_;
+    return p;
+  }
+
+  // ---------- scene: box (SERVİSLE UYGULA + DOĞRULA) ----------
+  void ensure_box_in_scene(rclcpp::executors::SingleThreadedExecutor &exec)
   {
     static const std::string kBoxId = "box";
-    moveit::planning_interface::PlanningSceneInterface psi;
-
-    auto objs = psi.getObjects({kBoxId});
-    if (objs.find(kBoxId) != objs.end()) {
-      RCLCPP_INFO(get_logger(), "Kutu sahnede zaten var; yeniden eklenmeyecek.");
-      return;
-    }
 
     shape_msgs::msg::SolidPrimitive prim;
     prim.type = shape_msgs::msg::SolidPrimitive::BOX;
     prim.dimensions = {box_sx_, box_sy_, box_sz_};
 
-    geometry_msgs::msg::Pose p; p.orientation.w = 1.0;
-    p.position.x = box_x_; p.position.y = box_y_; p.position.z = box_z_;
+    geometry_msgs::msg::Pose p = param_box_pose();
 
     moveit_msgs::msg::CollisionObject co;
     co.id = kBoxId; co.header.frame_id = world_frame_;
-    co.primitives.push_back(prim); co.primitive_poses.push_back(p);
+    co.primitives = {prim};
+    co.primitive_poses = {p};
     co.operation = co.ADD;
 
-    psi.applyCollisionObject(co);
-    RCLCPP_INFO(get_logger(), "Kutu sahneye eklendi (%.3f, %.3f, %.3f, %.3fx%.3fx%.3f).",
-                box_x_, box_y_, box_z_, box_sx_, box_sy_, box_sz_);
-    rclcpp::sleep_for(200ms);
+    // 1) /apply_planning_scene ile gönder
+    auto cli = this->create_client<moveit_msgs::srv::ApplyPlanningScene>("/apply_planning_scene");
+    bool ok_via_srv = false;
+    if (cli->wait_for_service(2s)) {
+      auto req = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
+      req->scene.is_diff = true;
+      req->scene.world.collision_objects = {co};
+
+      auto fut = cli->async_send_request(req);
+      if (exec.spin_until_future_complete(fut, 3s) == rclcpp::FutureReturnCode::SUCCESS) {
+        if (fut.get()->success) ok_via_srv = true;
+      }
+    }
+
+    // 2) Servis olmazsa PSI fallback
+    if (!ok_via_srv) {
+      moveit::planning_interface::PlanningSceneInterface psi;
+      psi.applyCollisionObject(co);
+      RCLCPP_WARN(get_logger(), "[ensure_box] /apply_planning_scene yok/başarısız -> PSI.applyCollisionObject ile gonderildi.");
+    }
+
+    // 3) Yayılmayı bekle + /get_planning_scene ile doğrula
+    auto t0 = this->now();
+    bool seen = false;
+    while ((this->now() - t0).seconds() < 5.0) {
+      exec.spin_some();
+      rclcpp::sleep_for(120ms);
+
+      auto cli_scene = this->create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
+      if (cli_scene->wait_for_service(1s)) {
+        auto req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
+        moveit_msgs::msg::PlanningSceneComponents comp;
+        comp.components = comp.WORLD_OBJECT_NAMES | comp.WORLD_OBJECT_GEOMETRY;
+        req->components = comp;
+
+        auto fut = cli_scene->async_send_request(req);
+        if (exec.spin_until_future_complete(fut, 1s) == rclcpp::FutureReturnCode::SUCCESS) {
+          auto resp = fut.get();
+          if (resp) {
+            RCLCPP_INFO(get_logger(), "[ensure_box] get_planning_scene: world objs=%zu",
+                        resp->scene.world.collision_objects.size());
+            for (const auto &wco : resp->scene.world.collision_objects) {
+              if (wco.id == kBoxId && has_valid_pose_and_geometry(wco)) {
+                seen = true; break;
+              }
+            }
+          }
+        }
+      }
+      if (seen) break;
+    }
+
+    if (!seen) {
+      RCLCPP_WARN(get_logger(), "[ensure_box] UYARI: /get_planning_scene icinde box gorunmedi; yine de devam edilecek.");
+    }
   }
 
   // ---------- object query ----------
@@ -308,18 +393,53 @@ private:
     std::string source;
   };
 
-  ObjInfo query_object_robust(const std::string &id, rclcpp::executors::SingleThreadedExecutor &exec)
+  bool wait_for_object_any(const std::string &id,
+                           rclcpp::executors::SingleThreadedExecutor &exec,
+                           double timeout_sec,
+                           ObjInfo &out)
   {
-    for (int i=1; i<=8; ++i) {
+    const auto t0 = this->now();
+    while ((this->now() - t0).seconds() < timeout_sec) {
+      exec.spin_some();
+
+      // 1) Scene servisi
       ObjInfo s = query_from_scene(id, exec);
-      if (s.valid && !is_zero_pose(s.center)) { s.source="scene"; return s; }
-      if (s.valid && is_zero_pose(s.center))
-        RCLCPP_WARN(get_logger(), "Obj '%s' sahnede ama poz (0,0,0) gorunuyor (try %d/8).", id.c_str(), i);
-      rclcpp::sleep_for(300ms);
+      if (s.valid) {
+        if (is_zero_pose(s.center)) {
+          // fallback: PSI pozları -> param pozu
+          if (fill_pose_from_psi_or_params(id, s.center)) { out = s; return true; }
+        } else { out = s; return true; }
+      }
+
+      // 2) PSI cache
+      ObjInfo p = query_from_psi(id);
+      if (p.valid) {
+        if (is_zero_pose(p.center)) {
+          if (fill_pose_from_psi_or_params(id, p.center)) { out = p; return true; }
+        } else { out = p; return true; }
+      }
+
+      rclcpp::sleep_for(150ms);
     }
-    ObjInfo p = query_from_psi(id); if (p.valid && !is_zero_pose(p.center)) { p.source="psi"; return p; }
-    ObjInfo d = defaults_local(id); if (d.valid) { d.source="default"; return d; }
-    return ObjInfo{};
+    RCLCPP_ERROR(get_logger(), "Obj '%s' pozisyonu bulunamadi (attached/scene/psi).", id.c_str());
+    return false;
+  }
+
+  // PSI'den sadece poz çekmeye zorlayan fallback
+  bool fill_pose_from_psi_or_params(const std::string &id, geometry_msgs::msg::Pose &pose_out)
+  {
+    moveit::planning_interface::PlanningSceneInterface psi;
+    std::map<std::string, geometry_msgs::msg::Pose> poses = psi.getObjectPoses({id});
+    auto it = poses.find(id);
+    if (it != poses.end() && !is_zero_pose(it->second)) {
+      pose_out = it->second;
+      return true;
+    }
+    if (id == "box") {
+      pose_out = param_box_pose(); // son çare: parametre pozu
+      return true;
+    }
+    return false;
   }
 
   ObjInfo query_from_scene(const std::string &id, rclcpp::executors::SingleThreadedExecutor &exec)
@@ -336,20 +456,23 @@ private:
     if (exec.spin_until_future_complete(fut, 3s) != rclcpp::FutureReturnCode::SUCCESS) return ObjInfo{};
     auto resp = fut.get(); if (!resp) return ObjInfo{};
 
+    RCLCPP_INFO(get_logger(), "[query_scene] world objs=%zu", resp->scene.world.collision_objects.size());
+
     for (const auto &co : resp->scene.world.collision_objects) {
       if (co.id != id) continue;
       ObjInfo out; out.valid = true; out.id = id;
-      if (!co.primitive_poses.empty()) out.center = co.primitive_poses.front();
-      else if (!co.mesh_poses.empty()) out.center = co.mesh_poses.front();
-      else out.center.orientation.w = 1.0;
-
+      out.center = extract_co_pose(co);
       if (!co.primitives.empty() &&
           co.primitives.front().type == shape_msgs::msg::SolidPrimitive::BOX &&
           co.primitives.front().dimensions.size() >= 3) {
         out.size_x = co.primitives.front().dimensions[0];
         out.size_y = co.primitives.front().dimensions[1];
         out.size_z = co.primitives.front().dimensions[2];
+      } else {
+        // boyut yoksa param boyutlarına düş
+        if (id == "box") { out.size_x = box_sx_; out.size_y = box_sy_; out.size_z = box_sz_; }
       }
+      out.source = "scene";
       return out;
     }
     return ObjInfo{};
@@ -359,39 +482,35 @@ private:
   {
     moveit::planning_interface::PlanningSceneInterface psi;
     auto objs = psi.getObjects({id});
-    auto it = objs.find(id); if (it == objs.end()) return ObjInfo{};
+    RCLCPP_INFO(get_logger(), "[query_psi] psi objs=%zu", objs.size());
+    auto it = objs.find(id); if (it == objs.end()) {
+      // Sadece pozları dene (bazı sürümlerde obj map boş, poz map dolu olabiliyor)
+      ObjInfo out;
+      std::map<std::string, geometry_msgs::msg::Pose> poses = psi.getObjectPoses({id});
+      auto pit = poses.find(id);
+      if (pit != poses.end()) {
+        out.valid = true; out.id = id; out.center = pit->second;
+        if (id == "box") { out.size_x = box_sx_; out.size_y = box_sy_; out.size_z = box_sz_; }
+        out.source = "psi_pose";
+        return out;
+      }
+      return ObjInfo{};
+    }
     const auto &co = it->second;
 
     ObjInfo out; out.valid = true; out.id = id;
-    if (!co.primitive_poses.empty()) out.center = co.primitive_poses.front();
-    else if (!co.mesh_poses.empty()) out.center = co.mesh_poses.front();
-    else out.center.orientation.w = 1.0;
-
+    out.center = extract_co_pose(co);
     if (!co.primitives.empty() &&
         co.primitives.front().type == shape_msgs::msg::SolidPrimitive::BOX &&
         co.primitives.front().dimensions.size() >= 3) {
       out.size_x = co.primitives.front().dimensions[0];
       out.size_y = co.primitives.front().dimensions[1];
       out.size_z = co.primitives.front().dimensions[2];
+    } else {
+      if (id == "box") { out.size_x = box_sx_; out.size_y = box_sy_; out.size_z = box_sz_; }
     }
+    out.source = "psi";
     return out;
-  }
-
-  ObjInfo defaults_local(const std::string &id)
-  {
-    ObjInfo o;
-    if (id == "box") {
-      o.valid = true; o.id = "box";
-      o.size_x = (box_sx_>0?box_sx_:0.04);
-      o.size_y = (box_sy_>0?box_sy_:0.04);
-      o.size_z = (box_sz_>0?box_sz_:0.12);
-      o.center.orientation.w = 1.0;
-      o.center.position.x = box_x_;
-      o.center.position.y = box_y_;
-      o.center.position.z = box_z_;
-      return o;
-    }
-    return ObjInfo{};
   }
 
   static bool is_zero_pose(const geometry_msgs::msg::Pose &p)
@@ -471,7 +590,7 @@ private:
         RCLCPP_WARN(get_logger(), "Segment kartesyen frac=%.2f (min %.2f) -> red.", frac, cart_min_frac_);
         return false;
       }
-      add_uniform_timestamps(traj, 0.02);  // 20 ms adım
+      add_uniform_timestamps(traj, 0.02);
       auto rc = mgi.execute(traj);
       if (rc != moveit::core::MoveItErrorCode::SUCCESS) {
         RCLCPP_ERROR(get_logger(), "Kartesyen yurutme basarisiz.");
@@ -500,7 +619,7 @@ private:
     return true;
   }
 
-  // ---------- gripper helpers (AYNI EXECUTOR İLE!) ----------
+  // ---------- gripper helpers ----------
   bool gripper_open (rclcpp::executors::SingleThreadedExecutor& exec) { return send_gripper_command(exec, grip_open_,  grip_effort_, grip_wait_s_, "open"); }
   bool gripper_close(rclcpp::executors::SingleThreadedExecutor& exec) { return send_gripper_command(exec, grip_close_, grip_effort_, grip_wait_s_, "close"); }
 
@@ -576,8 +695,7 @@ private:
 
   int fail_and_exit(const char *msg)
   {
-    RCLCPP_ERROR(get_logger(), "%s", msg);
-    RCLCPP_INFO(get_logger(), "BASARISIZ.");
+    RCLCPP_INFO(get_logger(), "%s", msg);
     return 4;
   }
 
