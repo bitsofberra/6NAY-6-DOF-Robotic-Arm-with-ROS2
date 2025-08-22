@@ -56,29 +56,20 @@ def generate_launch_description():
         output='screen',
     )
 
-
-
     server = Node(
         package='moveit',
         executable='custom_server',
         output='screen',
         parameters=[
-             moveit_config.to_dict(),  # <- BUNU EKLEMEZSEK SRDF YOK HATASI GELİR
+            moveit_config.to_dict(),
             { 'world_frame': 'panda_link0',
               'spawn_table': True,
               'spawn_box':   True,
               'acm_allow_box_and_table': False }
-            ],
-)
-
-    rviz = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        output='screen',
-        parameters=[params],
+        ],
     )
 
+    # (Opsiyonel) eski client kalabilir
     client = Node(
         package='moveit',
         executable='custom_client',
@@ -91,7 +82,55 @@ def generate_launch_description():
         output='screen',
     )
 
-    
+    free_gui = Node(
+    package='moveit',              # kendi paket adın
+    executable='free_move_gui',
+    output='screen',
+)
+
+    # Yeni pick_place_node – GUI'den /pick_place_cmd dinler
+    pick_place = Node(
+        package='moveit',                # paket adınızı yazın
+        executable='pick_place_node',    # bu dosyadan üretilen ikili
+        name='pick_place_node',
+        output='screen',
+        parameters=[
+            moveit_config.to_dict(),
+            {
+                'world_frame':    'panda_link0',
+                'planning_group': 'panda_arm',
+                'eef_link':       'panda_link8',
+
+                # hız/ivme (OMPL ölçekleri)
+                'vel_scale': 0.35,
+                'acc_scale': 0.35,
+
+                # Kartezyen iniş/çıkış
+                'eef_step':      0.004,
+                'cart_dt':       0.02,   # ~ uç-efektör hızı ≈ eef_step/cart_dt
+                'cart_min_frac': 0.45,
+                'cart_segments': 6,
+
+                # yaklaşma/kaçış
+                'approach_z':     0.24,
+                'retreat_z':      0.20,
+                'pick_clearance': 0.08,
+
+                # sahne/temas
+                'ensure_box':        True,
+                'allow_touch':       True,
+                'attach_after_pick': True
+            }
+        ],
+    )
+
+    rviz = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='screen',
+        parameters=[params],
+    )
 
     return LaunchDescription([
         static_tf,
@@ -100,7 +139,9 @@ def generate_launch_description():
         move_group,
         relay,
         server,
-        client,   
-        gui,      
+        client,
+        gui,
+        free_gui,
+        pick_place,   # move_group’tan sonra
         rviz,
     ])

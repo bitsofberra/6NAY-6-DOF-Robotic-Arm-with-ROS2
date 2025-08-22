@@ -4,13 +4,15 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include <atomic>
+#include <thread>
 
 #include <rclcpp/rclcpp.hpp>
-#include <rclcpp/executors/single_threaded_executor.hpp>
 #include <rclcpp/parameter_client.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/point.hpp>
 #include <shape_msgs/msg/solid_primitive.hpp>
 
 #include <moveit/move_group_interface/move_group_interface.hpp>
@@ -30,8 +32,8 @@ using namespace std::chrono_literals;
 class PickPlaceNode : public rclcpp::Node
 {
 public:
-  using GripperCmd = control_msgs::action::GripperCommand;
-  using GripperClient = rclcpp_action::Client<GripperCmd>;
+  using GripperCmd   = control_msgs::action::GripperCommand;
+  using GripperClient= rclcpp_action::Client<GripperCmd>;
 
   PickPlaceNode()
   : Node("pick_place_node",
@@ -39,6 +41,7 @@ public:
            .allow_undeclared_parameters(true)
            .automatically_declare_parameters_from_overrides(true))
   {
+    // --- Parametreler ---
     planning_group_ = pget<std::string>("planning_group", "panda_arm");
     eef_link_       = pget<std::string>("eef_link",       "panda_link8");
     world_frame_    = pget<std::string>("world_frame",    "panda_link0");
@@ -46,14 +49,13 @@ public:
     vel_scale_      = pget<double>("vel_scale", 0.35);
     acc_scale_      = pget<double>("acc_scale", 0.35);
     eef_step_       = pget<double>("eef_step",  0.004);
+    cart_dt_        = pget<double>("cart_dt",   0.02);   // zaman damgası adımı
     cart_min_frac_  = pget<double>("cart_min_frac", 0.45);
     cart_segments_  = pget<int>("cart_segments", 6);
 
     approach_z_     = pget<double>("approach_z", 0.24);
     retreat_z_      = pget<double>("retreat_z",  0.20);
     pick_clearance_ = pget<double>("pick_clearance", 0.08);
-    place_dx_       = pget<double>("place_dx",  -0.20);
-    place_dy_       = pget<double>("place_dy",  -0.20);
 
     ensure_box_     = pget<bool>("ensure_box", true);
     allow_touch_    = pget<bool>("allow_touch", true);
@@ -62,16 +64,16 @@ public:
     box_x_ = pget<double>("box_x", 0.50);
     box_y_ = pget<double>("box_y", 0.10);
     box_z_ = pget<double>("box_z", 0.445);
-    box_sx_ = pget<double>("box_size_x", 0.06);
-    box_sy_ = pget<double>("box_size_y", 0.06);
-    box_sz_ = pget<double>("box_size_z", 0.05);
+    box_sx_= pget<double>("box_size_x", 0.06);
+    box_sy_= pget<double>("box_size_y", 0.06);
+    box_sz_= pget<double>("box_size_z", 0.05);
 
     // Gripper
     gripper_action_ns_ = pget<std::string>("gripper_action", "/panda_hand_controller/gripper_cmd");
-    grip_open_  = pget<double>("grip_open",  0.080);
-    grip_close_ = pget<double>("grip_close", 0.030);
-    grip_effort_= pget<double>("grip_effort", 40.0);
-    grip_wait_s_= pget<double>("grip_wait_s", 3.0);
+    grip_open_   = pget<double>("grip_open",  0.080);
+    grip_close_  = pget<double>("grip_close", 0.030);
+    grip_effort_ = pget<double>("grip_effort",40.0);
+    grip_wait_s_ = pget<double>("grip_wait_s",3.0);
 
     // MoveIt param mirror için placeholder
     pensure<std::string>("robot_description", "");
@@ -79,108 +81,23 @@ public:
 
     gripper_client_ = rclcpp_action::create_client<GripperCmd>(this, gripper_action_ns_);
 
-    RCLCPP_INFO(get_logger(), "PickPlaceNode hazir. group=%s eef=%s frame=%s",
+    // GUI: Δx, Δy, Δz komutlarını alır
+    cmd_sub_ = this->create_subscription<geometry_msgs::msg::Point>(
+      "/pick_place_cmd", 10,
+      [this](const geometry_msgs::msg::Point::SharedPtr msg){
+        if (busy_.exchange(true)) {
+          RCLCPP_WARN(this->get_logger(), "Pick&Place sürüyor; yeni komut yoksayıldı.");
+          return;
+        }
+        std::thread([this, dx=msg->x, dy=msg->y, dz=msg->z](){
+          this->run_once(dx, dy, dz);
+          busy_ = false;
+        }).detach();
+      }
+    );
+
+    RCLCPP_INFO(get_logger(), "PickPlaceNode hazir. group=%s eef=%s frame=%s (topic=/pick_place_cmd)",
                 planning_group_.c_str(), eef_link_.c_str(), world_frame_.c_str());
-  }
-
-  int run()
-  {
-    rclcpp::executors::SingleThreadedExecutor exec;
-    auto self = this->shared_from_this();
-    exec.add_node(self);
-
-    if (!mirror_moveit_params(exec)) {
-      RCLCPP_FATAL(get_logger(), "FATAL: MoveIt parametreleri mirror edilemedi.");
-      return 2;
-    }
-
-    moveit::planning_interface::MoveGroupInterface mgi(self, planning_group_);
-    mgi.setPoseReferenceFrame(world_frame_);
-    mgi.setEndEffectorLink(eef_link_);
-    mgi.setPlannerId("RRTConnectkConfigDefault");
-    mgi.setPlanningTime(10.0);
-    mgi.setNumPlanningAttempts(20);
-    mgi.setMaxVelocityScalingFactor(vel_scale_);
-    mgi.setMaxAccelerationScalingFactor(acc_scale_);
-    mgi.setGoalPositionTolerance(0.01);
-    mgi.setGoalOrientationTolerance(0.7);
-    mgi.setGoalJointTolerance(0.01);
-    mgi.setWorkspace(-1.0, -1.0, 0.0, 1.5, 1.5, 1.5);
-
-    rclcpp::sleep_for(300ms);
-
-    if (ensure_box_) ensure_box_in_scene(exec);
-
-    ObjInfo box;
-    if (!wait_for_object_any("box", exec, /*timeout_sec=*/10.0, box)) {
-      RCLCPP_ERROR(get_logger(), "Box sahnede/attached gorunmuyor ya da geometri/poz hazir degil.");
-      return fail_and_exit("BASARISIZ.");
-    }
-
-    const double half_h = (box.size_z > 1e-6 ? box.size_z * 0.5 : 0.06);
-    const double table_top_z = 0.40;
-    const double box_top_z   = box.center.position.z + half_h;
-    const double place_cx = box.center.position.x + place_dx_;
-    const double place_cy = box.center.position.y + place_dy_;
-
-    auto q_down = [](){ geometry_msgs::msg::Quaternion q; q.w=0.0; q.x=1.0; q.y=0.0; q.z=0.0; return q; }();
-    auto pose_at = [&](double x,double y,double z){
-      geometry_msgs::msg::Pose p; p.position.x=x; p.position.y=y; p.position.z=z; p.orientation=q_down; return p;
-    };
-
-    const geometry_msgs::msg::Pose pre_pick  = pose_at(box.center.position.x, box.center.position.y,
-                                                       box_top_z + approach_z_);
-    const geometry_msgs::msg::Pose pick      = pose_at(box.center.position.x, box.center.position.y,
-                                                       box_top_z + pick_clearance_);
-
-    const geometry_msgs::msg::Pose pre_place = pose_at(place_cx, place_cy,
-                                                       table_top_z + half_h + approach_z_);
-    const geometry_msgs::msg::Pose place     = pose_at(place_cx, place_cy,
-                                                       table_top_z + half_h + pick_clearance_);
-
-    // 1) yaklaşmadan önce gripper açık
-    (void)gripper_open(exec);
-
-    if (!plan_and_execute_pose(mgi, pre_pick,  "pre-pick", /*relaxed*/true))
-      return fail_and_exit("Plan bulunamadi (pre-pick).");
-
-    // 2) dik iniş (segmentli kartesyen) ya da fallback plan
-    if (!descend_cartesian_segmented(mgi, pre_pick, pick))
-      if (!plan_and_execute_pose(mgi, pick, "pick", /*relaxed*/true))
-        return fail_and_exit("Plan bulunamadi (pick).");
-
-    // 3) gripper kapat ve ataşla
-    (void)gripper_close(exec);
-    if (attach_after_pick_) {
-      attach_object_to_eef("box");
-      RCLCPP_INFO(get_logger(), "Obje EEF'e attach edildi.");
-    }
-
-    // 4) yukarı kaçış
-    geometry_msgs::msg::Pose retreat = pick;
-    retreat.position.z += retreat_z_;
-    (void)descend_cartesian_segmented(mgi, pick, retreat);
-    rclcpp::sleep_for(200ms);
-
-    // 5) pre-place ve place
-    if (!plan_and_execute_pose(mgi, pre_place, "pre-place", /*relaxed*/true))
-      return fail_and_exit("Plan bulunamadi (pre-place).");
-
-    if (!descend_cartesian_segmented(mgi, pre_place, place))
-      if (!plan_and_execute_pose(mgi, place, "place", /*relaxed*/true))
-        return fail_and_exit("Plan bulunamadi (place).");
-
-    // 6) brak ve detach
-    (void)gripper_open(exec);
-    detach_object_from_eef("box");
-
-    // 7) yukarı kalk
-    geometry_msgs::msg::Pose post_place = place;
-    post_place.position.z += retreat_z_;
-    (void)descend_cartesian_segmented(mgi, place, post_place);
-
-    RCLCPP_INFO(get_logger(), "Pick & Place BASARILI.");
-    return 0;
   }
 
 private:
@@ -195,8 +112,98 @@ private:
     if (!this->has_parameter(name)) this->declare_parameter<T>(name, def);
   }
 
+  // ---------- public entry (her komutta bir kez) ----------
+  void run_once(double dx, double dy, double dz)
+  {
+    if (!params_mirrored_) params_mirrored_ = mirror_moveit_params();
+    if (!params_mirrored_) {
+      RCLCPP_WARN(get_logger(), "MoveIt parametreleri mirror edilemedi; gene de denenecek.");
+    }
+
+    if (ensure_box_) ensure_box_in_scene();
+
+    // MoveGroup arayüzü
+    moveit::planning_interface::MoveGroupInterface mgi(this->shared_from_this(), planning_group_);
+    mgi.setPoseReferenceFrame(world_frame_);
+    mgi.setEndEffectorLink(eef_link_);
+    mgi.setPlannerId("RRTConnectkConfigDefault");
+    mgi.setPlanningTime(10.0);
+    mgi.setNumPlanningAttempts(20);
+    mgi.setMaxVelocityScalingFactor(vel_scale_);
+    mgi.setMaxAccelerationScalingFactor(acc_scale_);
+    mgi.setGoalPositionTolerance(0.01);
+    mgi.setGoalOrientationTolerance(0.7);
+    mgi.setGoalJointTolerance(0.01);
+    mgi.setWorkspace(-1.0, -1.0, 0.0, 1.5, 1.5, 1.5);
+
+    ObjInfo box;
+    if (!wait_for_object_any("box", /*timeout_sec=*/10.0, box)) {
+      RCLCPP_ERROR(get_logger(), "Box sahnede/attached gorunmuyor ya da geometri/poz hazir degil.");
+      return;
+    }
+
+    const double half_h      = (box.size_z > 1e-6 ? box.size_z * 0.5 : 0.06);
+    const double table_top_z = 0.40;
+    const double box_top_z   = box.center.position.z + half_h;
+
+    const double place_cx = box.center.position.x + dx;
+    const double place_cy = box.center.position.y + dy;
+    const double place_cz = table_top_z + half_h + pick_clearance_ + dz; // dz: dikey ofset
+
+    auto q_down = [](){ geometry_msgs::msg::Quaternion q; q.w=0.0; q.x=1.0; q.y=0.0; q.z=0.0; return q; }();
+    auto pose_at = [&](double x,double y,double z){
+      geometry_msgs::msg::Pose p; p.position.x=x; p.position.y=y; p.position.z=z; p.orientation=q_down; return p;
+    };
+
+    const geometry_msgs::msg::Pose pre_pick  = pose_at(box.center.position.x, box.center.position.y,
+                                                       box_top_z + approach_z_);
+    const geometry_msgs::msg::Pose pick      = pose_at(box.center.position.x, box.center.position.y,
+                                                       box_top_z + pick_clearance_);
+
+    const geometry_msgs::msg::Pose pre_place = pose_at(place_cx, place_cy,
+                                                       place_cz + (approach_z_ - pick_clearance_));
+    const geometry_msgs::msg::Pose place     = pose_at(place_cx, place_cy, place_cz);
+
+    // 1) gripper açık
+    (void)gripper_open();
+
+    // 2) pre-pick
+    if (!plan_and_execute_pose(mgi, pre_pick, "pre-pick", /*relaxed*/true)) return;
+
+    // 2b) dik iniş (kartesyen) ya da fallback plan
+    if (!descend_cartesian_segmented(mgi, pre_pick, pick))
+      if (!plan_and_execute_pose(mgi, pick, "pick", /*relaxed*/true)) return;
+
+    // 3) kapat + attach
+    (void)gripper_close();
+    if (attach_after_pick_) {
+      attach_object_to_eef("box");
+      RCLCPP_INFO(get_logger(), "Obje EEF'e attach edildi.");
+    }
+
+    // 4) yukarı kaçış
+    geometry_msgs::msg::Pose retreat = pick; retreat.position.z += retreat_z_;
+    (void)descend_cartesian_segmented(mgi, pick, retreat);
+
+    // 5) pre-place & place
+    if (!plan_and_execute_pose(mgi, pre_place, "pre-place", /*relaxed*/true)) return;
+
+    if (!descend_cartesian_segmented(mgi, pre_place, place))
+      if (!plan_and_execute_pose(mgi, place, "place", /*relaxed*/true)) return;
+
+    // 6) bırak + detach
+    (void)gripper_open();
+    detach_object_from_eef("box");
+
+    // 7) yukarı kalk
+    geometry_msgs::msg::Pose post_place = place; post_place.position.z += retreat_z_;
+    (void)descend_cartesian_segmented(mgi, place, post_place);
+
+    RCLCPP_INFO(get_logger(), "Pick & Place BASARILI. d=(%.3f, %.3f, %.3f)", dx, dy, dz);
+  }
+
   // ---------- mirror (URDF/SRDF + prefixes) ----------
-  bool mirror_moveit_params(rclcpp::executors::SingleThreadedExecutor &exec)
+  bool mirror_moveit_params()
   {
     std::string urdf, srdf, who_urdf, who_srdf;
     const std::vector<std::string> prefer_urdf = {"/move_group","move_group", "/robot_state_publisher","robot_state_publisher", "/rviz2","rviz2"};
@@ -204,30 +211,31 @@ private:
 
     auto deadline = this->now() + rclcpp::Duration(30,0);
 
-    while (this->now() < deadline) { if (discover_param_string(exec, prefer_urdf, "robot_description", urdf, who_urdf)) break; rclcpp::sleep_for(500ms); }
-    while (this->now() < deadline) { if (discover_param_string(exec, prefer_srdf, "robot_description_semantic", srdf, who_srdf)) break; rclcpp::sleep_for(500ms); }
+    while (this->now() < deadline) { if (discover_param_string(prefer_urdf, "robot_description", urdf, who_urdf)) break; rclcpp::sleep_for(500ms); }
+    while (this->now() < deadline) { if (discover_param_string(prefer_srdf, "robot_description_semantic", srdf, who_srdf)) break; rclcpp::sleep_for(500ms); }
 
     if (urdf.empty() || srdf.empty()) return false;
     RCLCPP_INFO(get_logger(), "[mirror] URDF from %s, SRDF from %s", who_urdf.c_str(), who_srdf.c_str());
 
-    this->set_parameters({ rclcpp::Parameter("robot_description", urdf),
-                           rclcpp::Parameter("robot_description_semantic", srdf) });
+    this->set_parameters({
+      rclcpp::Parameter("robot_description", urdf),
+      rclcpp::Parameter("robot_description_semantic", srdf)
+    });
 
-    size_t kcopied = mirror_prefix(exec, "/move_group", "robot_description_kinematics");
-    size_t pcopied = mirror_prefix(exec, "/move_group", "robot_description_planning");
+    size_t kcopied = mirror_prefix("/move_group", "robot_description_kinematics");
+    size_t pcopied = mirror_prefix("/move_group", "robot_description_planning");
     if (pcopied == 0) RCLCPP_WARN(get_logger(), "[mirror] move_group'tan planning paramlari gelmedi (kritik degil).");
     RCLCPP_INFO(get_logger(), "[mirror] kinematics=%zu, planning=%zu kopyalandi.", kcopied, pcopied);
     return true;
   }
 
-  size_t mirror_prefix(rclcpp::executors::SingleThreadedExecutor &exec,
-                       const std::string &remote_node, const std::string &prefix)
+  size_t mirror_prefix(const std::string &remote_node, const std::string &prefix)
   {
     auto cli = std::make_shared<rclcpp::AsyncParametersClient>(this->shared_from_this(), remote_node);
     if (!cli->wait_for_service(3s)) return 0;
 
     auto fut_list = cli->list_parameters({prefix}, 1000);
-    if (exec.spin_until_future_complete(fut_list, 3s) != rclcpp::FutureReturnCode::SUCCESS) return 0;
+    if (fut_list.wait_for(3s) != std::future_status::ready) return 0;
     auto listed = fut_list.get();
     if (listed.names.empty()) return 0;
 
@@ -236,7 +244,7 @@ private:
     for (size_t i=0; i<listed.names.size(); i+=chunk) {
       std::vector<std::string> part(listed.names.begin()+i, listed.names.begin()+std::min(listed.names.size(), i+chunk));
       auto fut_get = cli->get_parameters(part);
-      if (exec.spin_until_future_complete(fut_get, 4s) != rclcpp::FutureReturnCode::SUCCESS) continue;
+      if (fut_get.wait_for(4s) != std::future_status::ready) continue;
       auto vals = fut_get.get();
       if (vals.empty()) {
         RCLCPP_WARN(get_logger(), "[mirror] get_parameters bos dondu (chunk %zu..%zu).", i, i+part.size());
@@ -248,25 +256,23 @@ private:
     return copied;
   }
 
-  bool discover_param_string(rclcpp::executors::SingleThreadedExecutor &exec,
-                             const std::vector<std::string> &nodes,
+  bool discover_param_string(const std::vector<std::string> &nodes,
                              const std::string &key, std::string &out, std::string &who)
   {
     for (int pass=0; pass<5; ++pass) {
       for (const auto &n : nodes)
-        if (try_get_param_string(exec, n, key, out)) { who = n; return true; }
+        if (try_get_param_string(n, key, out)) { who = n; return true; }
       rclcpp::sleep_for(500ms);
     }
     return false;
   }
 
-  bool try_get_param_string(rclcpp::executors::SingleThreadedExecutor &exec,
-                            const std::string &remote_node, const std::string &key, std::string &out)
+  bool try_get_param_string(const std::string &remote_node, const std::string &key, std::string &out)
   {
     auto cli = std::make_shared<rclcpp::AsyncParametersClient>(this->shared_from_this(), remote_node);
     if (!cli->wait_for_service(3s)) return false;
     auto fut = cli->get_parameters({key});
-    if (exec.spin_until_future_complete(fut, 3s) != rclcpp::FutureReturnCode::SUCCESS) return false;
+    if (fut.wait_for(3s) != std::future_status::ready) return false;
     auto res = fut.get();
     if (res.empty() || res[0].get_type() != rclcpp::ParameterType::PARAMETER_STRING) return false;
     out = res[0].as_string();
@@ -310,10 +316,20 @@ private:
     return p;
   }
 
-  // ---------- scene: box (SERVİSLE UYGULA + DOĞRULA) ----------
-  void ensure_box_in_scene(rclcpp::executors::SingleThreadedExecutor &exec)
+  // ---------- scene: box (UYGULA + DOĞRULA) ----------
+  void ensure_box_in_scene()
   {
     static const std::string kBoxId = "box";
+
+    // zaten varsa dokunma
+    {
+      moveit::planning_interface::PlanningSceneInterface psi;
+      auto objs = psi.getObjects({kBoxId});
+      if (!objs.empty()) {
+        RCLCPP_INFO(get_logger(), "[ensure_box] box zaten sahnede/attached; dokunulmuyor.");
+        return;
+      }
+    }
 
     shape_msgs::msg::SolidPrimitive prim;
     prim.type = shape_msgs::msg::SolidPrimitive::BOX;
@@ -334,9 +350,8 @@ private:
       auto req = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
       req->scene.is_diff = true;
       req->scene.world.collision_objects = {co};
-
       auto fut = cli->async_send_request(req);
-      if (exec.spin_until_future_complete(fut, 3s) == rclcpp::FutureReturnCode::SUCCESS) {
+      if (fut.wait_for(3s) == std::future_status::ready) {
         if (fut.get()->success) ok_via_srv = true;
       }
     }
@@ -348,40 +363,25 @@ private:
       RCLCPP_WARN(get_logger(), "[ensure_box] /apply_planning_scene yok/başarısız -> PSI.applyCollisionObject ile gonderildi.");
     }
 
-    // 3) Yayılmayı bekle + /get_planning_scene ile doğrula
-    auto t0 = this->now();
+    // 3) /get_planning_scene ile doğrula
     bool seen = false;
-    while ((this->now() - t0).seconds() < 5.0) {
-      exec.spin_some();
+    auto t0 = this->now();
+    while (!seen && (this->now() - t0).seconds() < 5.0) {
       rclcpp::sleep_for(120ms);
-
       auto cli_scene = this->create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
-      if (cli_scene->wait_for_service(1s)) {
-        auto req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
-        moveit_msgs::msg::PlanningSceneComponents comp;
-        comp.components = comp.WORLD_OBJECT_NAMES | comp.WORLD_OBJECT_GEOMETRY;
-        req->components = comp;
-
-        auto fut = cli_scene->async_send_request(req);
-        if (exec.spin_until_future_complete(fut, 1s) == rclcpp::FutureReturnCode::SUCCESS) {
-          auto resp = fut.get();
-          if (resp) {
-            RCLCPP_INFO(get_logger(), "[ensure_box] get_planning_scene: world objs=%zu",
-                        resp->scene.world.collision_objects.size());
-            for (const auto &wco : resp->scene.world.collision_objects) {
-              if (wco.id == kBoxId && has_valid_pose_and_geometry(wco)) {
-                seen = true; break;
-              }
-            }
-          }
-        }
+      if (!cli_scene->wait_for_service(1s)) continue;
+      auto req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
+      moveit_msgs::msg::PlanningSceneComponents comp;
+      comp.components = comp.WORLD_OBJECT_NAMES | comp.WORLD_OBJECT_GEOMETRY;
+      req->components = comp;
+      auto fut = cli_scene->async_send_request(req);
+      if (fut.wait_for(1s) != std::future_status::ready) continue;
+      auto resp = fut.get();
+      for (const auto &wco : resp->scene.world.collision_objects) {
+        if (wco.id == kBoxId && has_valid_pose_and_geometry(wco)) { seen = true; break; }
       }
-      if (seen) break;
     }
-
-    if (!seen) {
-      RCLCPP_WARN(get_logger(), "[ensure_box] UYARI: /get_planning_scene icinde box gorunmedi; yine de devam edilecek.");
-    }
+    if (!seen) RCLCPP_WARN(get_logger(), "[ensure_box] UYARI: /get_planning_scene icinde box gorunmedi; yine de devam edilecek.");
   }
 
   // ---------- object query ----------
@@ -393,20 +393,14 @@ private:
     std::string source;
   };
 
-  bool wait_for_object_any(const std::string &id,
-                           rclcpp::executors::SingleThreadedExecutor &exec,
-                           double timeout_sec,
-                           ObjInfo &out)
+  bool wait_for_object_any(const std::string &id, double timeout_sec, ObjInfo &out)
   {
     const auto t0 = this->now();
     while ((this->now() - t0).seconds() < timeout_sec) {
-      exec.spin_some();
-
       // 1) Scene servisi
-      ObjInfo s = query_from_scene(id, exec);
+      ObjInfo s = query_from_scene(id);
       if (s.valid) {
         if (is_zero_pose(s.center)) {
-          // fallback: PSI pozları -> param pozu
           if (fill_pose_from_psi_or_params(id, s.center)) { out = s; return true; }
         } else { out = s; return true; }
       }
@@ -418,7 +412,6 @@ private:
           if (fill_pose_from_psi_or_params(id, p.center)) { out = p; return true; }
         } else { out = p; return true; }
       }
-
       rclcpp::sleep_for(150ms);
     }
     RCLCPP_ERROR(get_logger(), "Obj '%s' pozisyonu bulunamadi (attached/scene/psi).", id.c_str());
@@ -435,14 +428,11 @@ private:
       pose_out = it->second;
       return true;
     }
-    if (id == "box") {
-      pose_out = param_box_pose(); // son çare: parametre pozu
-      return true;
-    }
+    if (id == "box") { pose_out = param_box_pose(); return true; }
     return false;
   }
 
-  ObjInfo query_from_scene(const std::string &id, rclcpp::executors::SingleThreadedExecutor &exec)
+  ObjInfo query_from_scene(const std::string &id)
   {
     auto cli = this->create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
     if (!cli->wait_for_service(2s)) return ObjInfo{};
@@ -453,7 +443,7 @@ private:
     req->components = comp;
 
     auto fut = cli->async_send_request(req);
-    if (exec.spin_until_future_complete(fut, 3s) != rclcpp::FutureReturnCode::SUCCESS) return ObjInfo{};
+    if (fut.wait_for(3s) != std::future_status::ready) return ObjInfo{};
     auto resp = fut.get(); if (!resp) return ObjInfo{};
 
     RCLCPP_INFO(get_logger(), "[query_scene] world objs=%zu", resp->scene.world.collision_objects.size());
@@ -469,7 +459,6 @@ private:
         out.size_y = co.primitives.front().dimensions[1];
         out.size_z = co.primitives.front().dimensions[2];
       } else {
-        // boyut yoksa param boyutlarına düş
         if (id == "box") { out.size_x = box_sx_; out.size_y = box_sy_; out.size_z = box_sz_; }
       }
       out.source = "scene";
@@ -484,7 +473,6 @@ private:
     auto objs = psi.getObjects({id});
     RCLCPP_INFO(get_logger(), "[query_psi] psi objs=%zu", objs.size());
     auto it = objs.find(id); if (it == objs.end()) {
-      // Sadece pozları dene (bazı sürümlerde obj map boş, poz map dolu olabiliyor)
       ObjInfo out;
       std::map<std::string, geometry_msgs::msg::Pose> poses = psi.getObjectPoses({id});
       auto pit = poses.find(id);
@@ -521,7 +509,7 @@ private:
   }
 
   // ---------- timing helper ----------
-  static void add_uniform_timestamps(moveit_msgs::msg::RobotTrajectory &traj, double dt_sec = 0.02)
+  static void add_uniform_timestamps(moveit_msgs::msg::RobotTrajectory &traj, double dt_sec)
   {
     if (traj.joint_trajectory.points.empty()) return;
     double t = 0.0;
@@ -590,7 +578,7 @@ private:
         RCLCPP_WARN(get_logger(), "Segment kartesyen frac=%.2f (min %.2f) -> red.", frac, cart_min_frac_);
         return false;
       }
-      add_uniform_timestamps(traj, 0.02);
+      add_uniform_timestamps(traj, cart_dt_);
       auto rc = mgi.execute(traj);
       if (rc != moveit::core::MoveItErrorCode::SUCCESS) {
         RCLCPP_ERROR(get_logger(), "Kartesyen yurutme basarisiz.");
@@ -620,11 +608,10 @@ private:
   }
 
   // ---------- gripper helpers ----------
-  bool gripper_open (rclcpp::executors::SingleThreadedExecutor& exec) { return send_gripper_command(exec, grip_open_,  grip_effort_, grip_wait_s_, "open"); }
-  bool gripper_close(rclcpp::executors::SingleThreadedExecutor& exec) { return send_gripper_command(exec, grip_close_, grip_effort_, grip_wait_s_, "close"); }
+  bool gripper_open () { return send_gripper_command(grip_open_,  grip_effort_, grip_wait_s_, "open"); }
+  bool gripper_close() { return send_gripper_command(grip_close_, grip_effort_, grip_wait_s_, "close"); }
 
-  bool send_gripper_command(rclcpp::executors::SingleThreadedExecutor& exec,
-                            double width, double effort, double wait_s, const char* tag)
+  bool send_gripper_command(double width, double effort, double wait_s, const char* tag)
   {
     if (!gripper_client_->wait_for_action_server(1s)) {
       RCLCPP_WARN(get_logger(), "[gripper] Action server yok (%s). Devam.", gripper_action_ns_.c_str());
@@ -634,12 +621,8 @@ private:
     goal.command.position   = width;
     goal.command.max_effort = effort;
 
-    auto send_opts = typename GripperClient::SendGoalOptions();
-    send_opts.result_callback = [](const rclcpp_action::ClientGoalHandle<GripperCmd>::WrappedResult&){};
-
-    auto fut_goal = gripper_client_->async_send_goal(goal, send_opts);
-    if (exec.spin_until_future_complete(fut_goal, std::chrono::duration<double>(wait_s))
-          != rclcpp::FutureReturnCode::SUCCESS) {
+    auto fut_goal = gripper_client_->async_send_goal(goal);
+    if (fut_goal.wait_for(std::chrono::duration<double>(wait_s)) != std::future_status::ready) {
       RCLCPP_WARN(get_logger(), "[gripper] goal gönderilemedi (%s).", tag);
       return false;
     }
@@ -649,7 +632,7 @@ private:
       return false;
     }
     auto fut_res = gripper_client_->async_get_result(ghandle);
-    (void)exec.spin_until_future_complete(fut_res, std::chrono::duration<double>(wait_s));
+    fut_res.wait_for(std::chrono::duration<double>(wait_s));
     RCLCPP_INFO(get_logger(), "[gripper] komut tamam (%s, hedef=%.3f).", tag, width);
     return true;
   }
@@ -693,18 +676,12 @@ private:
     rclcpp::sleep_for(100ms);
   }
 
-  int fail_and_exit(const char *msg)
-  {
-    RCLCPP_INFO(get_logger(), "%s", msg);
-    return 4;
-  }
-
 private:
   // params
   std::string planning_group_, eef_link_, world_frame_;
-  double vel_scale_{0.35}, acc_scale_{0.35}, eef_step_{0.004}, cart_min_frac_{0.45};
+  double vel_scale_{0.35}, acc_scale_{0.35}, eef_step_{0.004}, cart_dt_{0.02}, cart_min_frac_{0.45};
   int cart_segments_{6};
-  double approach_z_{0.24}, retreat_z_{0.20}, pick_clearance_{0.08}, place_dx_{-0.20}, place_dy_{-0.20};
+  double approach_z_{0.24}, retreat_z_{0.20}, pick_clearance_{0.08};
   bool ensure_box_{true}, allow_touch_{true}, attach_after_pick_{true};
   double box_x_{0.50}, box_y_{0.10}, box_z_{0.445}, box_sx_{0.06}, box_sy_{0.06}, box_sz_{0.05};
 
@@ -712,19 +689,21 @@ private:
   std::string gripper_action_ns_;
   double grip_open_{0.080}, grip_close_{0.030}, grip_effort_{40.0}, grip_wait_s_{3.0};
   GripperClient::SharedPtr gripper_client_;
+
+  // GUI subscriber & state
+  rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr cmd_sub_;
+  std::atomic_bool busy_{false};
+  std::atomic_bool params_mirrored_{false};
 };
 
+// ---- main: TEK executor (MultiThreaded) ----
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  try {
-    auto node = std::make_shared<PickPlaceNode>();
-    int rc = node->run();
-    rclcpp::shutdown();
-    return rc;
-  } catch (const std::exception &e) {
-    fprintf(stderr, "FATAL: %s\n", e.what());
-    rclcpp::shutdown();
-    return 99;
-  }
+  auto node = std::make_shared<PickPlaceNode>();
+  rclcpp::executors::MultiThreadedExecutor exec;
+  exec.add_node(node);
+  exec.spin();
+  rclcpp::shutdown();
+  return 0;
 }
