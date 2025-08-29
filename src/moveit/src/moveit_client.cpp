@@ -16,7 +16,7 @@ struct Vec { double x, y, z; };
 
 int main(int argc, char** argv)
 {
-  const char* json_path = "/home/yilmaz/ros2_ws/src/moveit/veri.json";
+  const char* json_path = "/home/revengeofthesob/ros3_ws/src/moveit/veri.json";
 
   std::ifstream data(json_path);
   if (!data.is_open()) {

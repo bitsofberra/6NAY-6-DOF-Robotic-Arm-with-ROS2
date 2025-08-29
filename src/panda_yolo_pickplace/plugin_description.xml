@@ -1,0 +1,7 @@
+<library path="lib/libpanda_gui">
+  <class name="panda_yolo_pickplace/gui"
+         type="panda_yolo_pickplace::GuiPanel"
+         base_class_type="rqt_gui_cpp::Plugin">
+    <description>Panda Pick&amp;Place buttons</description>
+  </class>
+</library>

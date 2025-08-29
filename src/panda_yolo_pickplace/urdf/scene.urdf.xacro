@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro" name="scene">
+<!-- world fixed camera above table_1 -->
+ <link name="camera_link"/>
+ <joint name="world_to_camera" type="fixed">
+  <parent link="world"/>
+  <child link="camera_link"/>
+  <origin xyz="0.6 0.0 1.2" rpy="-1.2 0.0 0.0"/> <!-- tilt down -->
+ </joint>
+
+
+<!-- table_1 and table_2; simple visuals/collisions omitted for brevity -->
+ <link name="table_1"/>
+ <joint name="world_to_table1" type="fixed">
+  <parent link="world"/>
+  <child link="table_1"/>
+  <origin xyz="0.5 0.0 0.0" rpy="0 0 0"/>
+ </joint>
+ <link name="table_2"/>
+ <joint name="world_to_table2" type="fixed">
+  <parent link="world"/>
+  <child link="table_2"/>
+  <origin xyz="0.9 0.0 0.0" rpy="0 0 0"/>
+ </joint>
+
+
+<!-- drop zones as frames -->
+ <link name="drop_red"/>
+ <joint name="table2_to_drop_red" type="fixed">
+  <parent link="table_2"/>
+  <child link="drop_red"/>
+  <origin xyz="0.0 0.15 0.76" rpy="0 0 0"/>
+ </joint>
+ <link name="drop_green"/>
+ <joint name="table2_to_drop_green" type="fixed">
+  <parent link="table_2"/>
+  <child link="drop_green"/>
+  <origin xyz="0.0 -0.15 0.76" rpy="0 0 0"/>
+ </joint>
+</robot>

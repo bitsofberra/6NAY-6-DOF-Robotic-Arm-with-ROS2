@@ -19,31 +19,32 @@ public:
   {
     // ROS node & publisher
     node_ = std::make_shared<rclcpp::Node>("vector_input_gui");
-    pub_  = node_->create_publisher<geometry_msgs::msg::Point>("/vector_distance_input", 10);
+    pub_  = node_->create_publisher<geometry_msgs::msg::Point>("/pick_place_cmd", 10);
 
     auto* v = new QVBoxLayout(this);
     auto* f = new QFormLayout();
 
-    x_ = new QDoubleSpinBox(); x_->setRange(-2.0,  2.0); x_->setDecimals(4); x_->setSingleStep(0.01); x_->setValue(0.50);
-    y_ = new QDoubleSpinBox(); y_->setRange(-2.0,  2.0); y_->setDecimals(4); y_->setSingleStep(0.01); y_->setValue(0.10);
-    z_ = new QDoubleSpinBox(); z_->setRange( 0.0,  2.0); z_->setDecimals(4); z_->setSingleStep(0.01); z_->setValue(0.54);
+    // Δx, Δy, Δz (metre cinsinden ofset)
+    dx_ = new QDoubleSpinBox(); dx_->setRange(-1.5, 1.5); dx_->setDecimals(4); dx_->setSingleStep(0.01); dx_->setValue(-0.20);
+    dy_ = new QDoubleSpinBox(); dy_->setRange(-1.5, 1.5); dy_->setDecimals(4); dy_->setSingleStep(0.01); dy_->setValue(-0.20);
+    dz_ = new QDoubleSpinBox(); dz_->setRange(-0.3,  0.3); dz_->setDecimals(4); dz_->setSingleStep(0.005); dz_->setValue(0.00);
 
-    f->addRow("x", x_);
-    f->addRow("y", y_);
-    f->addRow("z", z_);
+    f->addRow("Δx (m)", dx_);
+    f->addRow("Δy (m)", dy_);
+    f->addRow("Δz (m)", dz_);
     v->addLayout(f);
 
-    auto* send = new QPushButton("Gönder");
+    auto* send = new QPushButton("Pick & Place");
     v->addWidget(send);
 
-    status_ = new QLabel("Topic: /vector_distance_input");
+    status_ = new QLabel("Topic: /pick_place_cmd");
     v->addWidget(status_);
 
     connect(send, &QPushButton::clicked, this, [this](){
       geometry_msgs::msg::Point p;
-      p.x = x_->value(); p.y = y_->value(); p.z = z_->value();
+      p.x = dx_->value(); p.y = dy_->value(); p.z = dz_->value();
       pub_->publish(p);
-      status_->setText(QString("Yollandı: x=%1, y=%2, z=%3")
+      status_->setText(QString("Gönderildi: Δx=%1, Δy=%2, Δz=%3")
                        .arg(p.x,0,'f',3).arg(p.y,0,'f',3).arg(p.z,0,'f',3));
     });
 
@@ -57,7 +58,7 @@ public:
   }
 
 private:
-  QDoubleSpinBox *x_{}, *y_{}, *z_{};
+  QDoubleSpinBox *dx_{}, *dy_{}, *dz_{};
   QLabel* status_{};
   QTimer timer_;
 
@@ -71,7 +72,7 @@ int main(int argc, char** argv)
   QApplication app(argc, argv);
 
   VectorInputGui w;
-  w.setWindowTitle("Vector Distance Input (GUI -> /vector_distance_input)");
+  w.setWindowTitle("Pick & Place Command (Δx, Δy, Δz)");
   w.show();
 
   int ret = app.exec();

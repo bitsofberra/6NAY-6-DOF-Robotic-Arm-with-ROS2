@@ -7,20 +7,24 @@
   <maintainer email="gulmezylmazz@gmail.com">theonlyyilmaz</maintainer>
   <license>Apache-2.0</license>
 
- 
+  <!-- Build tool -->
   <buildtool_depend>ament_cmake</buildtool_depend>
 
- 
+  <!-- Arayüz üretimi -->
   <build_depend>rosidl_default_generators</build_depend>
   <exec_depend>rosidl_default_runtime</exec_depend>
 
-  
+  <!-- Bu paket ARAYÜZ kurduğu için şu gruba üye olmalı -->
   <member_of_group>rosidl_interface_packages</member_of_group>
 
- 
+  <!-- Kullandığın kütüphaneler -->
+  <depend>rclcpp</depend>
   <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>moveit_ros_planning_interface</depend>
+  <depend>nlohmann_json</depend>
 
-  
+  <!-- Test -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 
